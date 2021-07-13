@@ -1,6 +1,6 @@
 .reporter {
   .instruments-container {
-    .route-alias {
+    .route-alias-name {
       border-radius: 10px;
       background-color: $yellow-medium;
       color: #777888;
@@ -29,18 +29,18 @@
     table {
       margin-bottom: 0;
 
-      th {
-        font-weight: 200;
-      }
-
       td {
         font-family: $monospace;
         font-size: 11px;
       }
     }
 
+    .call-count {
+      white-space: nowrap;
+    }
+
     .no-calls .call-count,
-    .no-responses .response-count {
+    .no-responses .route-num-responses {
       color: $fail;
     }
   }

@@ -12,6 +12,7 @@ const { getStackLines, replacedStack, stackWithoutMessage, splitStack, unsplitSt
 const whitespaceRegex = /^(\s*)*/
 const stackLineRegex = /^\s*(at )?.*@?\(?.*\:\d+\:\d+\)?$/
 const customProtocolRegex = /^[^:\/]+:\/+/
+const percentNotEncodedRegex = /%(?![0-9A-F][0-9A-F])/g
 const STACK_REPLACEMENT_MARKER = '__stackReplacementMarker'
 
 const hasCrossFrameStacks = (specWindow) => {
@@ -157,6 +158,24 @@ const getWhitespace = (line) => {
   return whitespace || ''
 }
 
+const decodeSpecialChars = (filePath) => {
+  // the source map will encode certain characters like spaces and emojis
+  // but characters like &%#^% are not encoded
+  // because % is not encoded we must encode it manually before trying to decode
+  // or else decodeURIComponent will throw an error
+  //
+  // however if a filename has something like %20 in it we have no way of telling
+  // if that's the actual filename or an encoded space so we'll assume that its encoded
+  // since that's far more likely and to fix this issue
+  // we would have to patch the source-map library which likely isn't worth it
+
+  if (filePath) {
+    return decodeURIComponent(filePath.replace(percentNotEncodedRegex, '%25'))
+  }
+
+  return filePath
+}
+
 const getSourceDetails = (generatedDetails) => {
   const sourceDetails = $sourceMapUtils.getSourcePosition(generatedDetails.file, generatedDetails)
 
@@ -168,7 +187,7 @@ const getSourceDetails = (generatedDetails) => {
   return {
     line,
     column,
-    file,
+    file: decodeSpecialChars(file),
     function: fn,
   }
 }
@@ -199,6 +218,20 @@ const parseLine = (line) => {
 }
 
 const stripCustomProtocol = (filePath) => {
+  if (!filePath) {
+    return
+  }
+
+  // if the file path (after all said and done)
+  // still starts with "http://" or "https://" then
+  // it is an URL and we have no idea how it maps
+  // to a physical file location on disk. Let it be.
+  const httpProtocolRegex = /^https?:\/\//
+
+  if (httpProtocolRegex.test(filePath)) {
+    return
+  }
+
   return filePath.replace(customProtocolRegex, '')
 }
 
@@ -215,15 +248,21 @@ const getSourceDetailsForLine = (projectRoot, line) => {
   }
 
   const sourceDetails = getSourceDetails(generatedDetails)
+
   const originalFile = sourceDetails.file
-  const relativeFile = stripCustomProtocol(originalFile)
+
+  let relativeFile = stripCustomProtocol(originalFile)
+
+  if (relativeFile) {
+    relativeFile = path.normalize(relativeFile)
+  }
 
   return {
     function: sourceDetails.function,
     fileUrl: generatedDetails.file,
     originalFile,
     relativeFile,
-    absoluteFile: path.join(projectRoot, relativeFile),
+    absoluteFile: relativeFile ? path.join(projectRoot, relativeFile) : undefined,
     line: sourceDetails.line,
     // adding 1 to column makes more sense for code frame and opening in editor
     column: sourceDetails.column + 1,
@@ -308,7 +347,7 @@ const normalizedUserInvocationStack = (userInvocationStack) => {
   const stackLines = getStackLines(userInvocationStack)
   const winnowedStackLines = _.reject(stackLines, (line) => {
     // WARNING: STACK TRACE WILL BE DIFFERENT IN DEVELOPMENT vs PRODUCTOIN
-    // stacks in developemnt builds look like:
+    // stacks in development builds look like:
     //     at cypressErr (cypress:///../driver/src/cypress/error_utils.js:259:17)
     // stacks in prod builds look like:
     //     at cypressErr (http://localhost:3500/isolated-runner/cypress_runner.js:173123:17)

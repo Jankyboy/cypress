@@ -5,6 +5,7 @@ const $dom = require('../../dom')
 const $elements = require('../../dom/elements')
 const $errUtils = require('../../cypress/error_utils')
 const { resolveShadowDomInclusion } = require('../../cypress/shadow_dom_utils')
+const { getAliasedRequests, isDynamicAliasingPossible } = require('../net-stubbing/aliasing')
 
 module.exports = (Commands, Cypress, cy, state) => {
   Commands.addAll({
@@ -175,7 +176,34 @@ module.exports = (Commands, Cypress, cy, state) => {
         toSelect = _.join(_.dropRight(allParts, 1), '.')
       }
 
-      aliasObj = cy.getAlias(toSelect)
+      try {
+        aliasObj = cy.getAlias(toSelect)
+      } catch (err) {
+        // possibly this is a dynamic alias, check to see if there is a request
+        const alias = toSelect.slice(1)
+        const [request] = getAliasedRequests(alias, state)
+
+        if (!isDynamicAliasingPossible(state) || !request) {
+          throw err
+        }
+
+        aliasObj = {
+          alias,
+          command: state('routes')[request.routeId].command,
+        }
+      }
+
+      if (!aliasObj && isDynamicAliasingPossible(state)) {
+        const requests = getAliasedRequests(toSelect, state)
+
+        if (requests.length) {
+          aliasObj = {
+            alias: toSelect,
+            command: state('routes')[requests[0].routeId].command,
+          }
+        }
+      }
+
       if (aliasObj) {
         let { subject, alias, command } = aliasObj
 
@@ -244,6 +272,27 @@ module.exports = (Commands, Cypress, cy, state) => {
             log(requests, 'route')
 
             return requests
+          }
+
+          if (command.get('name') === 'intercept') {
+            const requests = getAliasedRequests(alias, state)
+            // detect alias.all and alias.index
+            const specifier = /\.(all|[\d]+)$/.exec(selector)
+
+            if (specifier) {
+              const [, index] = specifier
+
+              if (index === 'all') {
+                return requests
+              }
+
+              return requests[Number(index)] || null
+            }
+
+            log(requests, command.get('name'))
+
+            // by default return the latest match
+            return _.last(requests) || null
           }
 
           // log as primitive
@@ -416,6 +465,12 @@ module.exports = (Commands, Cypress, cy, state) => {
         filter = ''
       }
 
+      // https://github.com/cypress-io/cypress/issues/1119
+      if (text === 0) {
+        // text can be 0 but should not be falsy
+        text = '0'
+      }
+
       if (userOptions.matchCase === true && _.isRegExp(text) && text.flags.includes('i')) {
         $errUtils.throwErrByPath('contains.regex_conflict')
       }
@@ -574,6 +629,19 @@ module.exports = (Commands, Cypress, cy, state) => {
       const prevWithinSubject = state('withinSubject')
 
       state('withinSubject', subject)
+
+      // https://github.com/cypress-io/cypress/pull/8699
+      // An internal command is inserted to create a divider between
+      // commands inside within() callback and commands chained to it.
+      const restoreCmdIndex = state('index') + 1
+
+      cy.queue.splice(restoreCmdIndex, 0, {
+        args: [subject],
+        name: 'within-restore',
+        fn: (subject) => subject,
+      })
+
+      state('index', restoreCmdIndex)
 
       fn.call(ctx, subject)
 

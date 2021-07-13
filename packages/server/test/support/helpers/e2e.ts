@@ -15,15 +15,15 @@ const snapshot = require('snap-shot-it')
 const debug = require('debug')('cypress:support:e2e')
 const httpsProxy = require('@packages/https-proxy')
 const Fixtures = require('./fixtures')
-const fs = require(`${root}../lib/util/fs`)
-const allowDestroy = require(`${root}../lib/util/server_destroy`)
+const { fs } = require(`${root}../lib/util/fs`)
+const { allowDestroy } = require(`${root}../lib/util/server_destroy`)
 const cypress = require(`${root}../lib/cypress`)
 const screenshots = require(`${root}../lib/screenshots`)
 const videoCapture = require(`${root}../lib/video_capture`)
 const settings = require(`${root}../lib/util/settings`)
 
 // mutates mocha test runner - needed for `test.titlePath`
-require(`${root}../lib/project`)
+require(`${root}../lib/project-base`)
 
 cp = Bluebird.promisifyAll(cp)
 
@@ -43,8 +43,47 @@ const browserNameVersionRe = /(Browser\:\s+)(Custom |)(Electron|Chrome|Canary|Ch
 const availableBrowsersRe = /(Available browsers found on your system are:)([\s\S]+)/g
 const crossOriginErrorRe = /(Blocked a frame .* from accessing a cross-origin frame.*|Permission denied.*cross-origin object.*)/gm
 const whiteSpaceBetweenNewlines = /\n\s+\n/
+const retryDuration = /Timed out retrying after (\d+)ms/g
+const escapedRetryDuration = /TORA(\d+)/g
 
 export const STDOUT_DURATION_IN_TABLES_RE = /(\s+?)(\d+ms|\d+:\d+:?\d+)/g
+
+// extract the 'Difference' section from a snap-shot-it error message
+const diffRe = /Difference\n-{10}\n([\s\S]*)\n-{19}\nSaved snapshot text/m
+const expectedAddedVideoSnapshotLines = [
+  'Warning: We failed processing this video.',
+  'This error will not alter the exit code.', '',
+  'TimeoutError: operation timed out',
+  '[stack trace lines]', '', '',
+  '│ Video:        false                                                                            │',
+]
+const expectedDeletedVideoSnapshotLines = [
+  '│ Video:        true                                                                             │',
+  '(Video)', '',
+  '-  Started processing:  Compressing to 32 CRF',
+]
+
+const isVideoSnapshotError = (err: Error) => {
+  const [added, deleted] = [[], []]
+  const matches = diffRe.exec(err.message)
+
+  if (!matches || !matches.length) {
+    return false
+  }
+
+  const lines = matches[1].split('\n')
+
+  for (const line of lines) {
+    // past this point, the content is variable - mp4 path length
+    if (line.includes('Finished processing:')) break
+
+    if (line.charAt(0) === '+') added.push(line.slice(1).trim())
+
+    if (line.charAt(0) === '-') deleted.push(line.slice(1).trim())
+  }
+
+  return _.isEqual(added, expectedAddedVideoSnapshotLines) && _.isEqual(deleted, expectedDeletedVideoSnapshotLines)
+}
 
 // this captures an entire stack trace and replaces it with [stack trace lines]
 // so that the stdout can contain stack traces of different lengths
@@ -154,8 +193,12 @@ const normalizeStdout = function (str, options: any = {}) {
   .replace(browserNameVersionRe, replaceBrowserName)
   // numbers in parenths
   .replace(/\s\(\d+([ms]|ms)\)/g, '')
+  // escape "Timed out retrying" messages
+  .replace(retryDuration, 'TORA$1')
   // 12:35 -> XX:XX
   .replace(STDOUT_DURATION_IN_TABLES_RE, replaceDurationInTables)
+  // restore "Timed out retrying" messages
+  .replace(escapedRetryDuration, 'Timed out retrying after $1ms')
   .replace(/(coffee|js)-\d{3}/g, '$1-456')
   // Cypress: 2.1.0 -> Cypress: 1.2.3
   .replace(/(Cypress\:\s+)(\d+\.\d+\.\d+)/g, replaceCypressVersion)
@@ -201,6 +244,10 @@ const startServer = function (obj) {
   allowDestroy(srv)
 
   app.use(morgan('dev'))
+
+  if (obj.cors) {
+    app.use(require('cors')())
+  }
 
   const s = obj.static
 
@@ -406,7 +453,6 @@ const e2e = {
 
       if (process.env.NO_EXIT) {
         Fixtures.scaffoldWatch()
-        process.env.CYPRESS_INTERNAL_E2E_TESTS
       }
 
       sinon.stub(process, 'exit')
@@ -506,7 +552,12 @@ const e2e = {
       // hides a user warning to go through NPM module
       `--cwd=${process.cwd()}`,
       `--run-project=${options.project}`,
+      `--testingType=e2e`,
     ]
+
+    if (options.testingType === 'component') {
+      args.push('--component-testing')
+    }
 
     if (options.spec) {
       args.push(`--spec=${options.spec}`)
@@ -686,10 +737,20 @@ const e2e = {
 
         const str = normalizeStdout(stdout, options)
 
-        if (options.originalTitle) {
-          snapshot(options.originalTitle, str, { allowSharedSnapshot: true })
-        } else {
-          snapshot(str)
+        try {
+          if (options.originalTitle) {
+            snapshot(options.originalTitle, str, { allowSharedSnapshot: true })
+          } else {
+            snapshot(str)
+          }
+        } catch (err) {
+          // firefox has issues with recording video. for now, ignore snapshot diffs that only differ in this error.
+          // @see https://github.com/cypress-io/cypress/pull/16731
+          if (!(options.browser === 'firefox' && isVideoSnapshotError(err))) {
+            throw err
+          }
+
+          console.warn('(e2e warning) Firefox failed to process the video, but this is being ignored due to known issues with video processing in Firefox.')
         }
       }
 
@@ -780,6 +841,22 @@ const e2e = {
     return stdout
     .replace(/using description file: .* \(relative/g, 'using description file: [..] (relative')
     .replace(/Module build failed \(from .*\)/g, 'Module build failed (from [..])')
+  },
+
+  normalizeRuns (runs) {
+    runs.forEach((run) => {
+      run.tests.forEach((test) => {
+        test.attempts.forEach((attempt) => {
+          const codeFrame = attempt.error && attempt.error.codeFrame
+
+          if (codeFrame) {
+            codeFrame.absoluteFile = codeFrame.absoluteFile.split(pathUpToProjectName).join('/foo/bar/.projects')
+          }
+        })
+      })
+    })
+
+    return runs
   },
 }
 

@@ -56,8 +56,7 @@ describe('lib/config', () => {
 
       this.setup = (cypressJson = {}, cypressEnvJson = {}) => {
         sinon.stub(settings, 'read').withArgs(this.projectRoot).resolves(cypressJson)
-
-        return sinon.stub(settings, 'readEnv').withArgs(this.projectRoot).resolves(cypressEnvJson)
+        sinon.stub(settings, 'readEnv').withArgs(this.projectRoot).resolves(cypressEnvJson)
       }
     })
 
@@ -78,6 +77,19 @@ describe('lib/config', () => {
       return config.get(this.projectRoot)
       .then((obj) => {
         expect(obj.projectName).to.eq('project')
+      })
+    })
+
+    it('clones settings and env settings, so they are not mutated', function () {
+      const settings = { foo: 'bar' }
+      const envSettings = { baz: 'qux' }
+
+      this.setup(settings, envSettings)
+
+      return config.get(this.projectRoot)
+      .then(() => {
+        expect(settings).to.deep.equal({ foo: 'bar' })
+        expect(envSettings).to.deep.equal({ baz: 'qux' })
       })
     })
 
@@ -219,6 +231,65 @@ describe('lib/config', () => {
         })
       })
 
+      context('component', () => {
+        it('passes if an object with valid properties', function () {
+          this.setup({
+            component: {
+              baseUrl: 'https://cypress.com',
+              execTimeout: 10000,
+            },
+          })
+
+          return this.expectValidationPasses()
+        })
+
+        it('fails if not a plain object', function () {
+          this.setup({ component: false })
+          this.expectValidationFails('to be a plain object')
+
+          return this.expectValidationFails('the value was: `false`')
+        })
+
+        it('fails if nested property is incorrect', function () {
+          this.setup({ component: { baseUrl: false } })
+          this.expectValidationFails('Expected `component.baseUrl` to be a fully qualified URL (starting with `http://` or `https://`).')
+
+          return this.expectValidationFails('the value was: `false`')
+        })
+      })
+
+      context('e2e', () => {
+        it('passes if an object with valid properties', function () {
+          this.setup({
+            e2e: {
+              baseUrl: 'https://cypress.com',
+              execTimeout: 10000,
+            },
+          })
+        })
+
+        it('fails if not a plain object', function () {
+          this.setup({ e2e: false })
+          this.expectValidationFails('to be a plain object')
+
+          return this.expectValidationFails('the value was: `false`')
+        })
+
+        it('fails if nested property is incorrect', function () {
+          this.setup({ e2e: { animationDistanceThreshold: 'this is definitely not a number' } })
+          this.expectValidationFails('Expected `e2e.animationDistanceThreshold` to be a number')
+
+          return this.expectValidationFails('the value was: `"this is definitely not a number"`')
+        })
+
+        it('fails if nested property is incorrect', function () {
+          this.setup({ component: { baseUrl: false } })
+          this.expectValidationFails('Expected `component.baseUrl` to be a fully qualified URL (starting with `http://` or `https://`).')
+
+          return this.expectValidationFails('the value was: `false`')
+        })
+      })
+
       context('defaultCommandTimeout', () => {
         it('passes if a number', function () {
           this.setup({ defaultCommandTimeout: 10 })
@@ -347,6 +418,20 @@ describe('lib/config', () => {
 
         it('fails if not a string', function () {
           this.setup({ integrationFolder: true })
+
+          return this.expectValidationFails('be a string')
+        })
+      })
+
+      context('downloadsFolder', () => {
+        it('passes if a string', function () {
+          this.setup({ downloadsFolder: '_downloads' })
+
+          return this.expectValidationPasses()
+        })
+
+        it('fails if not a string', function () {
+          this.setup({ downloadsFolder: true })
 
           return this.expectValidationFails('be a string')
         })
@@ -649,6 +734,56 @@ describe('lib/config', () => {
         })
       })
 
+      context('scrollBehavior', () => {
+        it('passes if false', function () {
+          this.setup({ scrollBehavior: false })
+
+          return this.expectValidationPasses()
+        })
+
+        it('passes if an enum (center)', function () {
+          this.setup({ scrollBehavior: 'center' })
+
+          return this.expectValidationPasses()
+        })
+
+        it('passes if an enum (top)', function () {
+          this.setup({ scrollBehavior: 'top' })
+
+          return this.expectValidationPasses()
+        })
+
+        it('passes if an enum (bottom)', function () {
+          this.setup({ scrollBehavior: 'bottom' })
+
+          return this.expectValidationPasses()
+        })
+
+        it('passes if an enum (nearest)', function () {
+          this.setup({ scrollBehavior: 'nearest' })
+
+          return this.expectValidationPasses()
+        })
+
+        it('fails if not valid (number)', function () {
+          this.setup({ scrollBehavior: 42 })
+
+          return this.expectValidationFails('be one of these values')
+        })
+
+        it('fails if not a valid (null)', function () {
+          this.setup({ scrollBehavior: null })
+
+          return this.expectValidationFails('be one of these values')
+        })
+
+        it('fails if not a valid (true)', function () {
+          this.setup({ scrollBehavior: true })
+
+          return this.expectValidationFails('be one of these values')
+        })
+      })
+
       context('watchForFileChanges', () => {
         it('passes if a boolean', function () {
           this.setup({ watchForFileChanges: false })
@@ -747,6 +882,137 @@ describe('lib/config', () => {
           this.setup({ firefoxGcInterval: { foo: 'bar' } })
 
           return this.expectValidationFails('a positive number or null or an object')
+        })
+      })
+
+      function pemCertificate () {
+        return {
+          clientCertificates: [
+            {
+              url: 'https://somewhere.com/*',
+              ca: ['certs/ca.crt'],
+              certs: [
+                {
+                  cert: 'certs/cert.crt',
+                  key: 'certs/cert.key',
+                  passphrase: 'certs/cert.key.pass',
+                },
+              ],
+            },
+          ],
+        }
+      }
+
+      function pfxCertificate () {
+        return {
+          clientCertificates: [
+            {
+              url: 'https://somewhere.com/*',
+              ca: ['certs/ca.crt'],
+              certs: [
+                {
+                  pfx: 'certs/cert.pfx',
+                  passphrase: 'certs/cerpfx.pass',
+                },
+              ],
+            },
+          ],
+        }
+      }
+
+      context('clientCertificates', () => {
+        it('accepts valid PEM config', function () {
+          this.setup(pemCertificate())
+
+          return this.expectValidationPasses()
+        })
+
+        it('accepts valid PFX config', function () {
+          this.setup(pfxCertificate())
+
+          return this.expectValidationPasses()
+        })
+
+        it('detects invalid config with no url', function () {
+          let cfg = pemCertificate()
+
+          cfg.clientCertificates[0].url = null
+          this.setup(cfg)
+
+          return this.expectValidationFails('`clientCertificates[0].url` to be a URL matcher')
+        })
+
+        it('detects invalid config with no certs', function () {
+          let cfg = pemCertificate()
+
+          cfg.clientCertificates[0].certs = null
+          this.setup(cfg)
+
+          return this.expectValidationFails('`clientCertificates[0].certs` to be an array of certs')
+        })
+
+        it('detects invalid config with no cert', function () {
+          let cfg = pemCertificate()
+
+          cfg.clientCertificates[0].certs[0].cert = null
+          this.setup(cfg)
+
+          return this.expectValidationFails('`clientCertificates[0].certs[0]` must have either PEM or PFX defined')
+        })
+
+        it('detects invalid config with PEM and PFX certs', function () {
+          let cfg = pemCertificate()
+
+          cfg.clientCertificates[0].certs[0].pfx = 'a_file'
+          this.setup(cfg)
+
+          return this.expectValidationFails('`clientCertificates[0].certs[0]` has both PEM and PFX defined')
+        })
+
+        it('detects invalid PEM config with no key', function () {
+          let cfg = pemCertificate()
+
+          cfg.clientCertificates[0].certs[0].key = null
+          this.setup(cfg)
+
+          return this.expectValidationFails('`clientCertificates[0].certs[0].key` to be a key filepath')
+        })
+
+        it('detects PEM cert absolute path', function () {
+          let cfg = pemCertificate()
+
+          cfg.clientCertificates[0].certs[0].cert = '/home/files/a_file'
+          this.setup(cfg)
+
+          return this.expectValidationFails('`clientCertificates[0].certs[0].cert` to be a relative filepath')
+        })
+
+        it('detects PEM key absolute path', function () {
+          let cfg = pemCertificate()
+
+          cfg.clientCertificates[0].certs[0].key = '/home/files/a_file'
+          this.setup(cfg)
+
+          return this.expectValidationFails('`clientCertificates[0].certs[0].key` to be a relative filepath')
+        })
+
+        it('detects PFX absolute path', function () {
+          let cfg = pemCertificate()
+
+          cfg.clientCertificates[0].certs[0].cert = undefined
+          cfg.clientCertificates[0].certs[0].pfx = '/home/files/a_file'
+          this.setup(cfg)
+
+          return this.expectValidationFails('`clientCertificates[0].certs[0].pfx` to be a relative filepath')
+        })
+
+        it('detects CA absolute path', function () {
+          let cfg = pemCertificate()
+
+          cfg.clientCertificates[0].ca[0] = '/home/files/a_file'
+          this.setup(cfg)
+
+          return this.expectValidationFails('`clientCertificates[0].ca[0]` to be a relative filepath')
         })
       })
     })
@@ -947,6 +1213,10 @@ describe('lib/config', () => {
       return this.defaults('waitForAnimations', true)
     })
 
+    it('scrollBehavior=start', function () {
+      return this.defaults('scrollBehavior', 'top')
+    })
+
     it('animationDistanceThreshold=5', function () {
       return this.defaults('animationDistanceThreshold', 5)
     })
@@ -1142,6 +1412,27 @@ describe('lib/config', () => {
       expect(warning).to.be.calledWith('EXPERIMENTAL_SHADOW_DOM_REMOVED')
     })
 
+    it('warns if experimentalRunEvents is passed', async function () {
+      const warning = sinon.spy(errors, 'warning')
+
+      await this.defaults('experimentalRunEvents', true, {
+        experimentalRunEvents: true,
+      })
+
+      expect(warning).to.be.calledWith('EXPERIMENTAL_RUN_EVENTS_REMOVED')
+    })
+
+    // @see https://github.com/cypress-io/cypress/pull/9185
+    it('warns if experimentalNetworkStubbing is passed', async function () {
+      const warning = sinon.spy(errors, 'warning')
+
+      await this.defaults('experimentalNetworkStubbing', true, {
+        experimentalNetworkStubbing: true,
+      })
+
+      expect(warning).to.be.calledWith('EXPERIMENTAL_NETWORK_STUBBING_REMOVED')
+    })
+
     describe('.resolved', () => {
       it('sets reporter and port to cli', () => {
         const obj = {
@@ -1161,14 +1452,18 @@ describe('lib/config', () => {
             blockHosts: { value: null, from: 'default' },
             browsers: { value: [], from: 'default' },
             chromeWebSecurity: { value: true, from: 'default' },
+            clientCertificates: { value: [], from: 'default' },
+            component: { from: 'default', value: {} },
             componentFolder: { value: 'cypress/component', from: 'default' },
             defaultCommandTimeout: { value: 4000, from: 'default' },
+            downloadsFolder: { value: 'cypress/downloads', from: 'default' },
+            e2e: { from: 'default', value: {} },
             env: {},
             execTimeout: { value: 60000, from: 'default' },
-            experimentalComponentTesting: { value: false, from: 'default' },
             experimentalFetchPolyfill: { value: false, from: 'default' },
-            experimentalNetworkStubbing: { value: false, from: 'default' },
+            experimentalInteractiveRunEvents: { value: false, from: 'default' },
             experimentalSourceRewriting: { value: false, from: 'default' },
+            experimentalStudio: { value: false, from: 'default' },
             fileServerFolder: { value: '', from: 'default' },
             firefoxGcInterval: { value: { openMode: null, runMode: 1 }, from: 'default' },
             fixturesFolder: { value: 'cypress/fixtures', from: 'default' },
@@ -1183,6 +1478,7 @@ describe('lib/config', () => {
             pluginsFile: { value: 'cypress/plugins', from: 'default' },
             port: { value: 1234, from: 'cli' },
             projectId: { value: null, from: 'default' },
+            redirectionLimit: { value: 20, from: 'default' },
             reporter: { value: 'json', from: 'cli' },
             reporterOptions: { value: null, from: 'default' },
             requestTimeout: { value: 5000, from: 'default' },
@@ -1202,6 +1498,7 @@ describe('lib/config', () => {
             viewportHeight: { value: 660, from: 'default' },
             viewportWidth: { value: 1000, from: 'default' },
             waitForAnimations: { value: true, from: 'default' },
+            scrollBehavior: { value: 'top', from: 'default' },
             watchForFileChanges: { value: true, from: 'default' },
           })
         })
@@ -1211,7 +1508,6 @@ describe('lib/config', () => {
         sinon.stub(config, 'getProcessEnvVars').returns({
           quux: 'quux',
           RECORD_KEY: 'foobarbazquux',
-          CI_KEY: 'justanothercikey',
           PROJECT_ID: 'projectId123',
         })
 
@@ -1241,13 +1537,17 @@ describe('lib/config', () => {
             blockHosts: { value: null, from: 'default' },
             browsers: { value: [], from: 'default' },
             chromeWebSecurity: { value: true, from: 'default' },
+            component: { from: 'default', value: {} },
+            clientCertificates: { value: [], from: 'default' },
             componentFolder: { value: 'cypress/component', from: 'default' },
             defaultCommandTimeout: { value: 4000, from: 'default' },
+            downloadsFolder: { value: 'cypress/downloads', from: 'default' },
+            e2e: { from: 'default', value: {} },
             execTimeout: { value: 60000, from: 'default' },
-            experimentalComponentTesting: { value: false, from: 'default' },
             experimentalFetchPolyfill: { value: false, from: 'default' },
-            experimentalNetworkStubbing: { value: false, from: 'default' },
+            experimentalInteractiveRunEvents: { value: false, from: 'default' },
             experimentalSourceRewriting: { value: false, from: 'default' },
+            experimentalStudio: { value: false, from: 'default' },
             env: {
               foo: {
                 value: 'foo',
@@ -1269,10 +1569,6 @@ describe('lib/config', () => {
                 value: 'fooba...zquux',
                 from: 'env',
               },
-              CI_KEY: {
-                value: 'justa...cikey',
-                from: 'env',
-              },
             },
             fileServerFolder: { value: '', from: 'default' },
             firefoxGcInterval: { value: { openMode: null, runMode: 1 }, from: 'default' },
@@ -1288,6 +1584,7 @@ describe('lib/config', () => {
             pluginsFile: { value: 'cypress/plugins', from: 'default' },
             port: { value: 2020, from: 'config' },
             projectId: { value: 'projectId123', from: 'env' },
+            redirectionLimit: { value: 20, from: 'default' },
             reporter: { value: 'spec', from: 'default' },
             reporterOptions: { value: null, from: 'default' },
             requestTimeout: { value: 5000, from: 'default' },
@@ -1307,6 +1604,7 @@ describe('lib/config', () => {
             viewportHeight: { value: 660, from: 'default' },
             viewportWidth: { value: 1000, from: 'default' },
             waitForAnimations: { value: true, from: 'default' },
+            scrollBehavior: { value: 'top', from: 'default' },
             watchForFileChanges: { value: true, from: 'default' },
           })
         })
@@ -1406,7 +1704,7 @@ describe('lib/config', () => {
 
   context('_.defaultsDeep', () => {
     it('merges arrays', () => {
-    // sanity checks to confirm how Lodash merges arrays in defaultsDeep
+      // sanity checks to confirm how Lodash merges arrays in defaultsDeep
       const diffs = {
         list: [1],
       }
@@ -1716,19 +2014,19 @@ describe('lib/config', () => {
   })
 
   context('.setScaffoldPaths', () => {
-    it('sets integrationExamplePath + integrationExampleName + scaffoldedFiles', () => {
+    it('sets scaffoldedFiles', () => {
       const obj = {
         integrationFolder: '/_test-output/path/to/project/cypress/integration',
       }
 
-      sinon.stub(scaffold, 'fileTree').resolves([])
+      const scaffoldedFiles = ['/_test-output/path/to/project/cypress/integration/example.spec.js']
+
+      sinon.stub(scaffold, 'fileTree').resolves(scaffoldedFiles)
 
       return config.setScaffoldPaths(obj).then((result) => {
         expect(result).to.deep.eq({
           integrationFolder: '/_test-output/path/to/project/cypress/integration',
-          integrationExamplePath: '/_test-output/path/to/project/cypress/integration/examples',
-          integrationExampleName: 'examples',
-          scaffoldedFiles: [],
+          scaffoldedFiles,
         })
       })
     })

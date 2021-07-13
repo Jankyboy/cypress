@@ -4,8 +4,7 @@ const url = require('url')
 const path = require('path')
 const chalk = require('chalk')
 const debug = require('debug')('cypress:cli')
-const Listr = require('listr')
-const verbose = require('@cypress/listr-verbose-renderer')
+const { Listr } = require('listr2')
 const Promise = require('bluebird')
 const logSymbols = require('log-symbols')
 const { stripIndent } = require('common-tags')
@@ -16,6 +15,7 @@ const state = require('./state')
 const unzip = require('./unzip')
 const logger = require('../logger')
 const { throwFormErrorText, errors } = require('../errors')
+const verbose = require('../VerboseRenderer')
 
 const getNpmArgv = () => {
   const json = process.env.npm_config_argv
@@ -153,7 +153,7 @@ const downloadAndUnzip = ({ version, installDir, downloadDir }) => {
     throttle: 100,
     onProgress: null,
   }
-  const downloadDestination = path.join(downloadDir, 'cypress.zip')
+  const downloadDestination = path.join(downloadDir, `cypress-${process.pid}.zip`)
   const rendererOptions = getRendererOptions()
 
   // let the user know what version of cypress we're downloading!
@@ -162,7 +162,7 @@ const downloadAndUnzip = ({ version, installDir, downloadDir }) => {
 
   const tasks = new Listr([
     {
-      title: util.titleize('Downloading Cypress'),
+      options: { title: util.titleize('Downloading Cypress') },
       task: (ctx, task) => {
         // as our download progresses indicate the status
         progress.onProgress = progessify(task, 'Downloading Cypress')
@@ -190,7 +190,7 @@ const downloadAndUnzip = ({ version, installDir, downloadDir }) => {
       rendererOptions,
     }),
     {
-      title: util.titleize('Finishing Installation'),
+      options: { title: util.titleize('Finishing Installation') },
       task: (ctx, task) => {
         const cleanup = () => {
           debug('removing zip file %s', downloadDestination)
@@ -210,22 +210,13 @@ const downloadAndUnzip = ({ version, installDir, downloadDir }) => {
         })
       },
     },
-  ], rendererOptions)
+  ], { rendererOptions })
 
   // start the tasks!
   return Promise.resolve(tasks.run())
 }
 
 const start = (options = {}) => {
-  // handle deprecated / removed
-  if (util.getEnv('CYPRESS_BINARY_VERSION')) {
-    return throwFormErrorText(errors.removed.CYPRESS_BINARY_VERSION)()
-  }
-
-  if (util.getEnv('CYPRESS_SKIP_BINARY_INSTALL')) {
-    return throwFormErrorText(errors.removed.CYPRESS_SKIP_BINARY_INSTALL)()
-  }
-
   debug('installing with options %j', options)
 
   _.defaults(options, {
@@ -290,7 +281,7 @@ const start = (options = {}) => {
   })
   .then(() => {
     return Promise.all([
-      state.getBinaryPkgVersionAsync(binaryDir),
+      state.getBinaryPkgAsync(binaryDir).then(state.getBinaryPkgVersion),
       getVersionSpecifier(),
     ])
   })
@@ -399,7 +390,7 @@ const start = (options = {}) => {
           zipFilePath: absolutePath,
           installDir,
           rendererOptions,
-        })], rendererOptions).run()
+        })], { rendererOptions }).run()
       }
 
       if (options.force) {
@@ -429,7 +420,7 @@ module.exports = {
 
 const unzipTask = ({ zipFilePath, installDir, progress, rendererOptions }) => {
   return {
-    title: util.titleize('Unzipping Cypress'),
+    options: { title: util.titleize('Unzipping Cypress') },
     task: (ctx, task) => {
     // as our unzip progresses indicate the status
       progress.onProgress = progessify(task, 'Unzipping Cypress')

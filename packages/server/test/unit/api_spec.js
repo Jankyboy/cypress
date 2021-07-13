@@ -8,10 +8,12 @@ const {
 const pkg = require('@packages/root')
 const api = require(`${root}lib/api`)
 const cache = require(`${root}lib/cache`)
+const errors = require(`${root}lib/errors`)
 const machineId = require(`${root}lib/util/machine_id`)
 const Promise = require('bluebird')
 
 const API_BASEURL = 'http://localhost:1234'
+const ON_BASEURL = 'http://localhost:8080'
 const DASHBOARD_BASEURL = 'http://localhost:3000'
 const AUTH_URLS = {
   'dashboardAuthUrl': 'http://localhost:3000/test-runner.html',
@@ -31,6 +33,14 @@ describe('lib/api', () => {
 
     api.clearCache()
     sinon.stub(os, 'platform').returns('linux')
+
+    if (this.oldEnv) {
+      process.env = this.oldEnv
+    }
+
+    this.oldEnv = Object.assign({}, process.env)
+
+    process.env.DISABLE_API_RETRIES = true
 
     return sinon.stub(cache, 'getUser').resolves({
       name: 'foo bar',
@@ -63,7 +73,6 @@ describe('lib/api', () => {
     context('with a proxy defined', () => {
       beforeEach(function () {
         nock.cleanAll()
-        this.oldEnv = Object.assign({}, process.env)
       })
 
       it('makes calls using the correct agent', () => {
@@ -79,10 +88,6 @@ describe('lib/api', () => {
             href: 'http://localhost:1234/ping',
           })
         })
-      })
-
-      return afterEach(function () {
-        process.env = this.oldEnv
       })
     })
   })
@@ -343,6 +348,10 @@ describe('lib/api', () => {
           remoteOrigin: 'https://github.com/foo/bar.git',
         },
         specs: ['foo.js', 'bar.js'],
+        runnerCapabilities: {
+          'dynamicSpecsInSerialMode': true,
+          'skipSpecAction': true,
+        },
       }
     })
 
@@ -459,6 +468,8 @@ describe('lib/api', () => {
 
       nock(API_BASEURL)
       .matchHeader('x-route-version', '5')
+      .matchHeader('x-cypress-run-id', this.createProps.runId)
+      .matchHeader('x-cypress-request-attempt', '0')
       .matchHeader('x-os-name', 'darwin')
       .matchHeader('x-cypress-version', pkg.version)
       .post('/runs/run-id-123/instances', this.postProps)
@@ -550,46 +561,45 @@ describe('lib/api', () => {
     })
   })
 
-  context('.updateInstance', () => {
+  context('.postInstanceTests', () => {
     beforeEach(function () {
-      this.updateProps = {
+      this.props = {
+        runId: 'run-id-123',
         instanceId: 'instance-id-123',
-        stats: {},
-        error: 'err msg',
-        video: true,
-        screenshots: [],
-        cypressConfig: {},
-        reporterStats: {},
-        stdout: null,
+        config: {},
+        tests: [],
+        hooks: [],
       }
 
-      this.putProps = _.omit(this.updateProps, 'instanceId')
+      this.bodyProps = _.omit(this.props, 'instanceId', 'runId')
     })
 
-    it('PUTs /instances/:id', function () {
+    it('POSTs /instances/:id/results', function () {
       nock(API_BASEURL)
-      .matchHeader('x-route-version', '3')
+      .matchHeader('x-route-version', '1')
+      .matchHeader('x-cypress-run-id', this.props.runId)
+      .matchHeader('x-cypress-request-attempt', '0')
       .matchHeader('x-os-name', 'linux')
       .matchHeader('x-cypress-version', pkg.version)
-      .put('/instances/instance-id-123', this.putProps)
+      .post('/instances/instance-id-123/tests', this.bodyProps)
       .reply(200)
 
-      return api.updateInstance(this.updateProps)
+      return api.postInstanceTests(this.props)
     })
 
     it('PUT /instances/:id failure formatting', () => {
       nock(API_BASEURL)
-      .matchHeader('x-route-version', '3')
+      .matchHeader('x-route-version', '1')
       .matchHeader('x-os-name', 'linux')
       .matchHeader('x-cypress-version', pkg.version)
-      .put('/instances/instance-id-123')
+      .post('/instances/instance-id-123/tests')
       .reply(422, {
         errors: {
           tests: ['is required'],
         },
       })
 
-      return api.updateInstance({ instanceId: 'instance-id-123' })
+      return api.postInstanceTests({ instanceId: 'instance-id-123' })
       .then(() => {
         throw new Error('should have thrown here')
       }).catch((err) => {
@@ -609,14 +619,14 @@ describe('lib/api', () => {
 
     it('handles timeouts', () => {
       nock(API_BASEURL)
-      .matchHeader('x-route-version', '3')
+      .matchHeader('x-route-version', '1')
       .matchHeader('x-os-name', 'linux')
       .matchHeader('x-cypress-version', pkg.version)
-      .put('/instances/instance-id-123')
+      .post('/instances/instance-id-123/tests')
       .socketDelay(5000)
       .reply(200, {})
 
-      return api.updateInstance({
+      return api.postInstanceTests({
         instanceId: 'instance-id-123',
         timeout: 100,
       })
@@ -628,23 +638,127 @@ describe('lib/api', () => {
     })
 
     it('sets timeout to 60 seconds', () => {
-      sinon.stub(api.rp, 'put').resolves()
+      sinon.stub(api.rp, 'post').resolves()
 
-      return api.updateInstance({})
+      return api.postInstanceTests({})
       .then(() => {
-        expect(api.rp.put).to.be.calledWithMatch({ timeout: 60000 })
+        expect(api.rp.post).to.be.calledWithMatch({ timeout: 60000 })
       })
     })
 
     it('tags errors', function () {
       nock(API_BASEURL)
-      .matchHeader('x-route-version', '2')
+      .matchHeader('x-route-version', '1')
       .matchHeader('authorization', 'Bearer auth-token-123')
       .matchHeader('accept-encoding', /gzip/)
-      .put('/instances/instance-id-123', this.putProps)
+      .post('/instances/instance-id-123/tests', this.bodyProps)
       .reply(500, {})
 
-      return api.updateInstance(this.updateProps)
+      return api.postInstanceTests(this.props)
+      .then(() => {
+        throw new Error('should have thrown here')
+      }).catch((err) => {
+        expect(err.isApiError).to.be.true
+      })
+    })
+  })
+
+  context('.postInstanceResults', () => {
+    beforeEach(function () {
+      this.updateProps = {
+        runId: 'run-id-123',
+        instanceId: 'instance-id-123',
+        stats: {},
+        error: 'err msg',
+        video: true,
+        screenshots: [],
+        reporterStats: {},
+      }
+
+      this.postProps = _.pick(this.updateProps, 'stats', 'video', 'screenshots', 'reporterStats')
+    })
+
+    it('POSTs /instances/:id/results', function () {
+      nock(API_BASEURL)
+      .matchHeader('x-route-version', '1')
+      .matchHeader('x-cypress-run-id', this.updateProps.runId)
+      .matchHeader('x-cypress-request-attempt', '0')
+      .matchHeader('x-os-name', 'linux')
+      .matchHeader('x-cypress-version', pkg.version)
+      .post('/instances/instance-id-123/results', this.postProps)
+      .reply(200)
+
+      return api.postInstanceResults(this.updateProps)
+    })
+
+    it('PUT /instances/:id failure formatting', () => {
+      nock(API_BASEURL)
+      .matchHeader('x-route-version', '1')
+      .matchHeader('x-os-name', 'linux')
+      .matchHeader('x-cypress-version', pkg.version)
+      .post('/instances/instance-id-123/results')
+      .reply(422, {
+        errors: {
+          tests: ['is required'],
+        },
+      })
+
+      return api.postInstanceResults({ instanceId: 'instance-id-123' })
+      .then(() => {
+        throw new Error('should have thrown here')
+      }).catch((err) => {
+        expect(err.message).to.eq(`\
+422
+
+{
+  "errors": {
+    "tests": [
+      "is required"
+    ]
+  }
+}\
+`)
+      })
+    })
+
+    it('handles timeouts', () => {
+      nock(API_BASEURL)
+      .matchHeader('x-route-version', '1')
+      .matchHeader('x-os-name', 'linux')
+      .matchHeader('x-cypress-version', pkg.version)
+      .post('/instances/instance-id-123/results')
+      .socketDelay(5000)
+      .reply(200, {})
+
+      return api.postInstanceResults({
+        instanceId: 'instance-id-123',
+        timeout: 100,
+      })
+      .then(() => {
+        throw new Error('should have thrown here')
+      }).catch((err) => {
+        expect(err.message).to.eq('Error: ESOCKETTIMEDOUT')
+      })
+    })
+
+    it('sets timeout to 60 seconds', () => {
+      sinon.stub(api.rp, 'post').resolves()
+
+      return api.postInstanceResults({})
+      .then(() => {
+        expect(api.rp.post).to.be.calledWithMatch({ timeout: 60000 })
+      })
+    })
+
+    it('tags errors', function () {
+      nock(API_BASEURL)
+      .matchHeader('x-route-version', '1')
+      .matchHeader('authorization', 'Bearer auth-token-123')
+      .matchHeader('accept-encoding', /gzip/)
+      .post('/instances/instance-id-123/results', this.postProps)
+      .reply(500, {})
+
+      return api.postInstanceResults(this.updateProps)
       .then(() => {
         throw new Error('should have thrown here')
       }).catch((err) => {
@@ -657,6 +771,8 @@ describe('lib/api', () => {
     it('PUTs /instances/:id/stdout', () => {
       nock(API_BASEURL)
       .matchHeader('x-os-name', 'linux')
+      .matchHeader('x-cypress-run-id', 'run-id-123')
+      .matchHeader('x-cypress-request-attempt', '0')
       .matchHeader('x-cypress-version', pkg.version)
       .put('/instances/instance-id-123/stdout', {
         stdout: 'foobarbaz\n',
@@ -664,6 +780,7 @@ describe('lib/api', () => {
       .reply(200)
 
       return api.updateInstanceStdout({
+        runId: 'run-id-123',
         instanceId: 'instance-id-123',
         stdout: 'foobarbaz\n',
       })
@@ -1011,74 +1128,6 @@ describe('lib/api', () => {
     })
   })
 
-  context('.getProjectToken', () => {
-    it('GETs /projects/:id/token', () => {
-      nock(API_BASEURL)
-      .matchHeader('x-os-name', 'linux')
-      .matchHeader('x-cypress-version', pkg.version)
-      .matchHeader('authorization', 'Bearer auth-token-123')
-      .matchHeader('accept-encoding', /gzip/)
-      .get('/projects/project-123/token')
-      .reply(200, {
-        apiToken: 'token-123',
-      })
-
-      return api.getProjectToken('project-123', 'auth-token-123')
-      .then((resp) => {
-        expect(resp).to.eq('token-123')
-      })
-    })
-
-    it('tags errors', () => {
-      nock(API_BASEURL)
-      .matchHeader('authorization', 'Bearer auth-token-123')
-      .matchHeader('accept-encoding', /gzip/)
-      .get('/projects/project-123/token')
-      .reply(500, {})
-
-      return api.getProjectToken('project-123', 'auth-token-123')
-      .then(() => {
-        throw new Error('should have thrown here')
-      }).catch((err) => {
-        expect(err.isApiError).to.be.true
-      })
-    })
-  })
-
-  context('.updateProjectToken', () => {
-    it('PUTs /projects/:id/token', () => {
-      nock(API_BASEURL)
-      .matchHeader('x-os-name', 'linux')
-      .matchHeader('x-cypress-version', pkg.version)
-      .matchHeader('authorization', 'Bearer auth-token-123')
-      .matchHeader('accept-encoding', /gzip/)
-      .put('/projects/project-123/token')
-      .reply(200, {
-        apiToken: 'token-123',
-      })
-
-      return api.updateProjectToken('project-123', 'auth-token-123')
-      .then((resp) => {
-        expect(resp).to.eq('token-123')
-      })
-    })
-
-    it('tags errors', () => {
-      nock(API_BASEURL)
-      .matchHeader('authorization', 'Bearer auth-token-123')
-      .matchHeader('accept-encoding', /gzip/)
-      .put('/projects/project-id-123/token')
-      .reply(500, {})
-
-      return api.updateProjectToken('project-123', 'auth-token-123')
-      .then(() => {
-        throw new Error('should have thrown here')
-      }).catch((err) => {
-        expect(err.isApiError).to.be.true
-      })
-    })
-  })
-
   context('.createCrashReport', () => {
     beforeEach(function () {
       this.setup = (body, authToken, delay = 0) => {
@@ -1142,8 +1191,36 @@ describe('lib/api', () => {
     })
   })
 
+  context('.getReleaseNotes', () => {
+    it('GET /release-notes/:version + returns result', () => {
+      const releaseNotes = { title: 'New in 1.2.3!' }
+
+      nock(ON_BASEURL)
+      .get('/release-notes/1.2.3')
+      .reply(200, releaseNotes)
+
+      return api.getReleaseNotes('1.2.3')
+      .then((ret) => {
+        expect(ret).to.deep.eq(releaseNotes)
+      })
+    })
+
+    it('ignores errors + returns empty object', () => {
+      nock(ON_BASEURL)
+      .get('/release-notes/1.2.3')
+      .reply(500, {})
+
+      return api.getReleaseNotes('1.2.3')
+      .then((result) => {
+        expect(result).to.deep.eq({})
+      })
+    })
+  })
+
   context('.retryWithBackoff', () => {
     beforeEach(() => {
+      process.env.DISABLE_API_RETRIES = ''
+
       return sinon.stub(Promise, 'delay').resolves()
     })
 
@@ -1156,12 +1233,17 @@ describe('lib/api', () => {
     })
 
     it('retries if function times out', () => {
-      const fn = sinon.stub().rejects(new Promise.TimeoutError())
+      const fn = sinon.stub()
+      .rejects(new Promise.TimeoutError())
 
       fn.onCall(1).resolves()
 
-      return api.retryWithBackoff(fn).then(() => {
+      return api.retryWithBackoff(fn)
+      .then(() => {
+        console.log('gsd')
         expect(fn).to.be.calledTwice
+        expect(fn.firstCall.args[0]).eq(0)
+        expect(fn.secondCall.args[0]).eq(1)
       })
     })
 
@@ -1239,34 +1321,33 @@ describe('lib/api', () => {
       })
     })
 
-    it('calls onBeforeRetry before each retry', () => {
+    it('calls errors.warning before each retry', () => {
       const err = makeError({ message: '500 error', statusCode: 500 })
-      const onBeforeRetry = sinon.stub()
+
+      sinon.spy(errors, 'warning')
       const fn = sinon.stub().rejects(err)
 
       fn.onCall(3).resolves()
 
-      return api.retryWithBackoff(fn, { onBeforeRetry }).then(() => {
-        expect(onBeforeRetry).to.be.calledThrice
-        expect(onBeforeRetry.firstCall.args[0]).to.eql({
-          retryIndex: 0,
-          delay: 30 * 1000,
-          total: 3,
-          err,
+      return api.retryWithBackoff(fn).then(() => {
+        expect(errors.warning).to.be.calledThrice
+        expect(errors.warning.firstCall.args[0]).to.eql('DASHBOARD_API_RESPONSE_FAILED_RETRYING')
+        expect(errors.warning.firstCall.args[1]).to.eql({
+          delay: '30 seconds',
+          tries: 3,
+          response: err,
         })
 
-        expect(onBeforeRetry.secondCall.args[0]).to.eql({
-          retryIndex: 1,
-          delay: 60 * 1000,
-          total: 3,
-          err,
+        expect(errors.warning.secondCall.args[1]).to.eql({
+          delay: '1 minute',
+          tries: 2,
+          response: err,
         })
 
-        expect(onBeforeRetry.thirdCall.args[0]).to.eql({
-          retryIndex: 2,
-          delay: 2 * 60 * 1000,
-          total: 3,
-          err,
+        expect(errors.warning.thirdCall.args[1]).to.eql({
+          delay: '2 minutes',
+          tries: 1,
+          response: err,
         })
       })
     })

@@ -5,7 +5,7 @@ const path = require('path')
 const debug = require('debug')('cypress:server:file')
 const Promise = require('bluebird')
 const lockFile = Promise.promisifyAll(require('lockfile'))
-const fs = require('./fs')
+const { fs } = require('./fs')
 const env = require('./env')
 const exit = require('./exit')
 const { default: pQueue } = require('p-queue')
@@ -21,7 +21,9 @@ class File {
 
     this.path = options.path
 
-    this._lockFileDir = path.join(os.tmpdir(), 'cypress')
+    // If multiple users write to a specific directory is os.tmpdir, permission errors can arise.
+    // Instead, we make a user specific directory with os.tmpdir.
+    this._lockFileDir = path.join(os.tmpdir(), `cypress-${os.userInfo().uid}`)
     this._lockFilePath = path.join(this._lockFileDir, `${md5(this.path)}.lock`)
 
     this._queue = new pQueue({ concurrency: 1 })

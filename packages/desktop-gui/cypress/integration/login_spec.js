@@ -65,15 +65,16 @@ describe('Login', function () {
         cy.get('.login').contains('button', 'Log In to Dashboard').as('loginBtn').click()
       })
 
-      it('triggers ipc \'begin:auth\' on click', function () {
+      it('triggers ipc "begin:auth" on click', function () {
         cy.then(function () {
           expect(this.ipc.beginAuth).to.be.calledOnce
         })
       })
 
-      it('passes utm code when it triggers ipc \'begin:auth\'', function () {
+      it('passes utm code when it triggers ipc "begin:auth"', function () {
         cy.then(function () {
-          expect(this.ipc.beginAuth).to.be.calledWith('Nav Login Button')
+          // we match nav in this test since the outer beforeEach initializes the modal from the navbar
+          expect(this.ipc.beginAuth).to.be.calledWith('Nav')
         })
       })
 
@@ -100,58 +101,86 @@ describe('Login', function () {
         })
 
         describe('on ipc begin:auth success', function () {
-          beforeEach(function () {
-            this.beginAuth.resolve(this.user)
-          })
-
-          it('goes to previous view', () => {
-            cy.shouldBeOnIntro()
-          })
-
-          it('displays username in UI', function () {
-            cy.get('.user-dropdown .dropdown-chosen').should('contain', this.user.name)
-          })
-
-          it('displays username in success dialog', () => {
-            cy.get('.modal').contains('Jane Lane')
-
-            cy.percySnapshot()
-          })
-
-          it('can close modal by clicking Continue', () => {
-            cy.get('.modal .btn:contains(Continue)').click()
-            cy.get('.modal').should('not.be.visible')
-          })
-
-          context('after clicking Continue', function () {
+          context('when user name is not defined', () => {
             beforeEach(function () {
-              cy.get('.modal .btn:contains(Continue)').click()
+              this.user.name = ''
+              this.beginAuth.resolve(this.user)
             })
 
-            context('log out', function () {
-              it('displays login button on logout', () => {
-                cy.get('.user-dropdown .dropdown-chosen').contains('Jane').click()
+            it('displays user email in UI', function () {
+              cy.get('.user-dropdown .dropdown-chosen').should('contain', this.user.email)
+            })
 
-                cy.contains('Log Out').click()
-                cy.get('.nav').contains('Log In')
+            it('displays user email in success dialog', function () {
+              cy.get('.modal').contains(this.user.email)
+
+              cy.percySnapshot()
+            })
+
+            it('displays message with link to complete onboarding steps', () => {
+              cy.get('.modal').contains('complete the onboarding steps')
+
+              cy.contains('a', 'Cypress Dashboard')
+              .click().then(function () {
+                expect(this.ipc.externalOpen).to.be.calledWith('https://on.cypress.io/dashboard/profile')
+              })
+            })
+          })
+
+          context('when user name is defined', () => {
+            beforeEach(function () {
+              this.beginAuth.resolve(this.user)
+            })
+
+            it('goes to previous view', () => {
+              cy.shouldBeOnIntro()
+            })
+
+            it('displays username in UI', function () {
+              cy.get('.user-dropdown .dropdown-chosen').should('contain', this.user.name)
+            })
+
+            it('displays username in success dialog', () => {
+              cy.get('.modal').contains('Jane Lane')
+
+              cy.percySnapshot()
+            })
+
+            it('can close modal by clicking Continue', () => {
+              cy.get('.modal .btn:contains(Continue)').click()
+              cy.get('.modal').should('not.be.visible')
+            })
+
+            context('after clicking Continue', function () {
+              beforeEach(function () {
+                cy.get('.modal .btn:contains(Continue)').click()
               })
 
-              it('calls log:out', function () {
-                cy.get('.user-dropdown .dropdown-chosen').contains('Jane').click()
+              context('log out', function () {
+                it('displays login button on logout', () => {
+                  cy.get('.user-dropdown .dropdown-chosen').contains('Jane').click()
 
-                cy.contains('Log Out').click().then(function () {
-                  expect(this.ipc.logOut).to.be.called
+                  cy.contains('Log Out').click()
+                  cy.get('.nav').contains('Log In')
                 })
-              })
 
-              it('has login button enabled when returning to login after logout', function () {
-                cy.get('.user-dropdown .dropdown-chosen').contains('Jane').click()
-                cy.contains('Log Out').click()
-                cy.contains('Log In').click()
+                it('calls log:out', function () {
+                  cy.get('.user-dropdown .dropdown-chosen').contains('Jane').click()
 
-                cy.get('.login button').eq(1)
-                .should('not.be.disabled').invoke('text')
-                .should('include', 'Log In to Dashboard')
+                  cy.contains('Log Out').click().then(function () {
+                    expect(this.ipc.logOut).to.be.called
+                  })
+                })
+
+                it('has login button enabled when returning to login after logout', function () {
+                  cy.get('.user-dropdown .dropdown-chosen').contains('Jane').click()
+                  cy.contains('Log Out').click()
+                  cy.contains('Log In').click()
+
+                  cy.get('.login button').eq(1)
+                  .should('not.be.disabled').invoke('text')
+                  .should('include', 'Log In to Dashboard')
+                })
               })
             })
           })
@@ -235,20 +264,6 @@ describe('Login', function () {
         })
       })
     })
-
-    describe('terms and privacy message', () => {
-      it('opens links to terms and privacy on click', function () {
-        cy.contains('a', 'Terms of Use')
-        .click().then(function () {
-          expect(this.ipc.externalOpen).to.be.calledWith('https://on.cypress.io/terms-of-use')
-        })
-
-        cy.contains('a', 'Privacy Policy')
-        .click().then(function () {
-          expect(this.ipc.externalOpen).to.be.calledWith('https://on.cypress.io/privacy-policy')
-        })
-      })
-    })
   })
 
   describe('when not connected to api server', function () {
@@ -303,7 +318,7 @@ describe('Login', function () {
 
     describe('api help link', () => {
       it('goes to external api help link', () => {
-        cy.contains('Learn more').click().then(function () {
+        cy.get('.login').contains('Learn more').click().then(function () {
           expect(this.ipc.externalOpen).to.be.calledWith('https://on.cypress.io/help-connect-to-api')
         })
       })

@@ -355,6 +355,20 @@ describe('src/cy/commands/querying', () => {
       })
     })
 
+    // https://github.com/cypress-io/cypress/issues/4757
+    it('subject is restored after within() call', () => {
+      cy.get('#wrapper').within(() => {
+        cy.get('#upper').should('contain.text', 'New York')
+      })
+      .should('have.id', 'wrapper')
+    })
+
+    // https://github.com/cypress-io/cypress/issues/5183
+    it('contains() works after within() call', () => {
+      cy.get(`#wrapper`).within(() => cy.get(`#upper`)).should(`contain.text`, `New York`)
+      cy.contains(`button`, `button`).should(`exist`)
+    })
+
     describe('.log', () => {
       beforeEach(function () {
         this.logs = []
@@ -1787,6 +1801,12 @@ describe('src/cy/commands/querying', () => {
       cy.contains('DOES NOT CONTAIN THIS!')
     })
 
+    // https://github.com/cypress-io/cypress/issues/8626
+    it(`works correctly with ' character inside Regexp.`, () => {
+      $(`<button>'</button>`).appendTo($('body'))
+      cy.contains(/\'/)
+    })
+
     describe('should(\'not.exist\')', () => {
       it('returns null when no content exists', () => {
         cy.contains('alksjdflkasjdflkajsdf').should('not.exist').then(($el) => {
@@ -2122,6 +2142,15 @@ space
           expect(this.lastLog.get('message')).to.eq('div, Nested Find')
 
           expect(this.lastLog.get('$el').get(0)).to.eq($div.get(0))
+        })
+      })
+
+      // https://github.com/cypress-io/cypress/issues/1119
+      it('logs "0" on cy.contains(0)', function () {
+        cy.state('document').write('<span>0</span>')
+
+        cy.contains(0).then(() => {
+          expect(this.lastLog.get('message')).to.eq('0')
         })
       })
 

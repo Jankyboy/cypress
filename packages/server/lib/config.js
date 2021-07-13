@@ -6,7 +6,7 @@ const deepDiff = require('return-deep-diff')
 
 const errors = require('./errors')
 const scaffold = require('./scaffold')
-const fs = require('./util/fs')
+const { fs } = require('./util/fs')
 const keys = require('./util/keys')
 const origin = require('./util/origin')
 const coerce = require('./util/coerce')
@@ -23,7 +23,6 @@ const CYPRESS_RESERVED_ENV_VARS = [
   'CYPRESS_INTERNAL_ENV',
 ]
 const CYPRESS_SPECIAL_ENV_VARS = [
-  'CI_KEY',
   'RECORD_KEY',
 ]
 
@@ -210,8 +209,8 @@ module.exports = {
       return this.set({
         projectName: this.getNameFromRoot(projectRoot),
         projectRoot,
-        config: settings,
-        envFile,
+        config: _.cloneDeep(settings),
+        envFile: _.cloneDeep(envFile),
         options,
       })
     })
@@ -241,6 +240,8 @@ module.exports = {
 
   mergeDefaults (config = {}, options = {}) {
     const resolved = {}
+
+    config.rawJson = _.cloneDeep(config)
 
     _.extend(config, _.pick(options, 'configFile', 'morgan', 'isTextTerminal', 'socketId', 'report', 'browsers'))
     debug('merged config with options, got %o', config)
@@ -473,9 +474,6 @@ module.exports = {
   setScaffoldPaths (obj) {
     obj = _.clone(obj)
 
-    obj.integrationExampleName = scaffold.integrationExampleName()
-    obj.integrationExamplePath = path.join(obj.integrationFolder, obj.integrationExampleName)
-
     debug('set scaffold paths')
 
     return scaffold.fileTree(obj)
@@ -656,6 +654,7 @@ module.exports = {
   setUrls (obj) {
     obj = _.clone(obj)
 
+    // TODO: rename this to be proxyServer
     const proxyUrl = `http://localhost:${obj.port}`
 
     const rootUrl = obj.baseUrl ?
@@ -753,6 +752,16 @@ module.exports = {
       return memo
     }
     , {})
+  },
+
+  getResolvedRuntimeConfig (config, runtimeConfig) {
+    const resolvedRuntimeFields = _.mapValues(runtimeConfig, (v) => ({ value: v, from: 'runtime' }))
+
+    return {
+      ...config,
+      ...runtimeConfig,
+      resolved: { ...config.resolved, ...resolvedRuntimeFields },
+    }
   },
 
   getNameFromRoot (root = '') {

@@ -88,6 +88,10 @@ const hasRetriableStatusCodeFailure = (res, retryOnStatusCodeFailure) => {
   ])
 }
 
+const isErrEmptyResponseError = (err) => {
+  return _.startsWith(err.message, 'ERR_EMPTY_RESPONSE')
+}
+
 const isRetriableError = (err = {}, retryOnNetworkFailure) => {
   return _.every([
     retryOnNetworkFailure,
@@ -116,7 +120,7 @@ const maybeRetryOnNetworkFailure = function (err, options = {}) {
     opts.minVersion = 'TLSv1'
   }
 
-  if (!isTlsVersionError && !isRetriableError(err, retryOnNetworkFailure)) {
+  if (!isTlsVersionError && !isErrEmptyResponseError(err.originalErr || err) && !isRetriableError(err, retryOnNetworkFailure)) {
     return onElse()
   }
 
@@ -699,6 +703,22 @@ module.exports = function (options = {}) {
         options.form = options.body
         delete options.json
         delete options.body
+      }
+
+      // https://github.com/cypress-io/cypress/issues/6178
+      if (options.bodyIsBase64Encoded) {
+        try {
+          debug('body is base64 format: %s', options.body)
+          options.body = Buffer.from(options.body, 'base64')
+        } catch (e) {
+          debug('failed to parse base64 body.')
+
+          throw e
+        }
+
+        // These options should be set to send raw Buffer.
+        options.encoding = null
+        options.json = false
       }
 
       const self = this

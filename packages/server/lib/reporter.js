@@ -131,6 +131,17 @@ const toMochaProps = (testProps) => {
   })
 }
 
+const toAttemptProps = (runnable) => {
+  return _.pick(runnable, [
+    'err',
+    'state',
+    'timings',
+    'failedFromHookId',
+    'wallClockStartedAt',
+    'wallClockDuration',
+  ])
+}
+
 const mergeRunnable = (eventName) => {
   return (function (testProps, runnables) {
     toMochaProps(testProps)
@@ -143,7 +154,7 @@ const mergeRunnable = (eventName) => {
         const prevAttempts = runnable.prevAttempts || []
 
         delete runnable.prevAttempts
-        const prevAttempt = _.cloneDeep(runnable)
+        const prevAttempt = toAttemptProps(runnable)
 
         delete runnable.failedFromHookId
         delete runnable.err
@@ -362,6 +373,7 @@ class Reporter {
           name: attempt.err.name,
           message: attempt.err.message,
           stack: stackUtils.stackWithoutMessage(attempt.err.stack),
+          codeFrame: attempt.err.codeFrame,
         }
 
         return {

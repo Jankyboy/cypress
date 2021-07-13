@@ -1,26 +1,27 @@
 exports['continues installing on failure 1'] = `
 Installing Cypress (version: 1.2.3)
 
-  ✔  Downloaded Cypress
-  ✔  Unzipped Cypress
-  ✔  Finished Installation   /cache/Cypress/1.2.3
+
+⠋  Downloaded Cypress
+✔  Downloaded Cypress
+✔  Downloaded Cypress
+⠋  Unzipped Cypress
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+⠋  Finished Installation   /cache/Cypress/1.2.3
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Finished Installation   /cache/Cypress/1.2.3
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Finished Installation   /cache/Cypress/1.2.3
 
 You can now open Cypress by running: node_modules/.bin/cypress open
 
 https://on.cypress.io/installing-cypress
 
-
-`
-
-exports['error for removed CYPRESS_BINARY_VERSION 1'] = `
-Error: The environment variable CYPRESS_BINARY_VERSION has been renamed to CYPRESS_INSTALL_BINARY as of version 3.0.0
-
-You should set CYPRESS_INSTALL_BINARY instead.
-
-----------
-
-Platform: darwin (Foo-OsVersion)
-Cypress Version: 1.2.3
 
 `
 
@@ -30,9 +31,22 @@ Cypress 1.2.3 is installed in /cache/Cypress/1.2.3
 
 Installing Cypress (version: 1.2.3)
 
-  ✔  Downloaded Cypress
-  ✔  Unzipped Cypress
-  ✔  Finished Installation   /cache/Cypress/1.2.3
+
+⠋  Downloaded Cypress
+✔  Downloaded Cypress
+✔  Downloaded Cypress
+⠋  Unzipped Cypress
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+⠋  Finished Installation   /cache/Cypress/1.2.3
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Finished Installation   /cache/Cypress/1.2.3
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Finished Installation   /cache/Cypress/1.2.3
 
 You can now open Cypress by running: node_modules/.bin/cypress open
 
@@ -47,9 +61,22 @@ Cypress x.x.x is installed in /cache/Cypress/1.2.3
 
 Installing Cypress (version: 1.2.3)
 
-  ✔  Downloaded Cypress
-  ✔  Unzipped Cypress
-  ✔  Finished Installation   /cache/Cypress/1.2.3
+
+⠋  Downloaded Cypress
+✔  Downloaded Cypress
+✔  Downloaded Cypress
+⠋  Unzipped Cypress
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+⠋  Finished Installation   /cache/Cypress/1.2.3
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Finished Installation   /cache/Cypress/1.2.3
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Finished Installation   /cache/Cypress/1.2.3
 
 You can now open Cypress by running: node_modules/.bin/cypress open
 
@@ -64,12 +91,8 @@ Cypress x.x.x is installed in /cache/Cypress/1.2.3
 
 Installing Cypress (version: 1.2.3)
 
-[xx:xx:xx]  Downloading Cypress     [started]
-[xx:xx:xx]  Downloading Cypress     [completed]
-[xx:xx:xx]  Unzipping Cypress       [started]
-[xx:xx:xx]  Unzipping Cypress       [completed]
-[xx:xx:xx]  Finishing Installation  [started]
-[xx:xx:xx]  Finishing Installation  [completed]
+
+
 
 You can now open Cypress by running: node_modules/.bin/cypress open
 
@@ -81,9 +104,22 @@ https://on.cypress.io/installing-cypress
 exports['installs without existing installation 1'] = `
 Installing Cypress (version: 1.2.3)
 
-  ✔  Downloaded Cypress
-  ✔  Unzipped Cypress
-  ✔  Finished Installation   /cache/Cypress/1.2.3
+
+⠋  Downloaded Cypress
+✔  Downloaded Cypress
+✔  Downloaded Cypress
+⠋  Unzipped Cypress
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+⠋  Finished Installation   /cache/Cypress/1.2.3
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Finished Installation   /cache/Cypress/1.2.3
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Finished Installation   /cache/Cypress/1.2.3
 
 You can now open Cypress by running: node_modules/.bin/cypress open
 
@@ -113,6 +149,8 @@ Cypress Version: 1.2.3
 
 exports['silent install 1'] = `
 [no output]
+
+
 `
 
 exports['skip installation 1'] = `
@@ -132,9 +170,22 @@ exports['specify version in env vars 1'] = `
 
 Installing Cypress (version: 0.12.1)
 
-  ✔  Downloaded Cypress
-  ✔  Unzipped Cypress
-  ✔  Finished Installation   /cache/Cypress/1.2.3
+
+⠋  Downloaded Cypress
+✔  Downloaded Cypress
+✔  Downloaded Cypress
+⠋  Unzipped Cypress
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+⠋  Finished Installation   /cache/Cypress/1.2.3
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Finished Installation   /cache/Cypress/1.2.3
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Finished Installation   /cache/Cypress/1.2.3
 
 You can now open Cypress by running: node_modules/.bin/cypress open
 
@@ -166,9 +217,22 @@ Cypress x.x.x is installed in /cache/Cypress/1.2.3
 
 Installing Cypress (version: 1.2.3)
 
-  ✔  Downloaded Cypress
-  ✔  Unzipped Cypress
-  ✔  Finished Installation   /cache/Cypress/1.2.3
+
+⠋  Downloaded Cypress
+✔  Downloaded Cypress
+✔  Downloaded Cypress
+⠋  Unzipped Cypress
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+⠋  Finished Installation   /cache/Cypress/1.2.3
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Finished Installation   /cache/Cypress/1.2.3
+✔  Downloaded Cypress
+✔  Unzipped Cypress
+✔  Finished Installation   /cache/Cypress/1.2.3
 
 ⚠ Warning: It looks like you've installed Cypress globally.
 

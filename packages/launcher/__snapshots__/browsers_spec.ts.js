@@ -25,6 +25,14 @@ exports['browsers returns the expected list of browsers 1'] = [
   {
     "name": "chrome",
     "family": "chromium",
+    "channel": "beta",
+    "displayName": "Chrome Beta",
+    "versionRegex": {},
+    "binary": "google-chrome-beta"
+  },
+  {
+    "name": "chrome",
+    "family": "chromium",
     "channel": "canary",
     "displayName": "Canary",
     "versionRegex": {},
@@ -35,7 +43,6 @@ exports['browsers returns the expected list of browsers 1'] = [
     "family": "firefox",
     "channel": "stable",
     "displayName": "Firefox",
-    "info": "Firefox support is currently in beta! You can help us continue to improve the Cypress + Firefox experience by [reporting any issues you find](https://on.cypress.io/new-issue).",
     "versionRegex": {},
     "binary": "firefox"
   },
@@ -44,7 +51,6 @@ exports['browsers returns the expected list of browsers 1'] = [
     "family": "firefox",
     "channel": "dev",
     "displayName": "Firefox Developer Edition",
-    "info": "Firefox support is currently in beta! You can help us continue to improve the Cypress + Firefox experience by [reporting any issues you find](https://on.cypress.io/new-issue).",
     "versionRegex": {},
     "binary": [
       "firefox-developer-edition",
@@ -56,7 +62,6 @@ exports['browsers returns the expected list of browsers 1'] = [
     "family": "firefox",
     "channel": "nightly",
     "displayName": "Firefox Nightly",
-    "info": "Firefox support is currently in beta! You can help us continue to improve the Cypress + Firefox experience by [reporting any issues you find](https://on.cypress.io/new-issue).",
     "versionRegex": {},
     "binary": [
       "firefox-nightly",
@@ -69,7 +74,10 @@ exports['browsers returns the expected list of browsers 1'] = [
     "channel": "stable",
     "displayName": "Edge",
     "versionRegex": {},
-    "binary": "edge"
+    "binary": [
+      "edge",
+      "microsoft-edge"
+    ]
   },
   {
     "name": "edge",
@@ -93,6 +101,9 @@ exports['browsers returns the expected list of browsers 1'] = [
     "channel": "dev",
     "displayName": "Edge Dev",
     "versionRegex": {},
-    "binary": "edge-dev"
+    "binary": [
+      "edge-dev",
+      "microsoft-edge-dev"
+    ]
   }
 ]

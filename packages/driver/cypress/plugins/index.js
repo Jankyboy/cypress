@@ -8,7 +8,7 @@ const Promise = require('bluebird')
 const wp = require('@cypress/webpack-preprocessor')
 
 process.env.NO_LIVERELOAD = '1'
-const webpackOptions = require('@packages/runner/webpack.config.ts').default
+const [webpackOptions] = require('@packages/runner/webpack.config.ts').default
 
 // set mode to development which overrides
 // the 'none' value of the base webpack config
@@ -37,6 +37,13 @@ module.exports = (on) => {
   on('task', {
     'return:arg' (arg) {
       return arg
+    },
+    'arg:is:undefined' (arg) {
+      if (arg === undefined) {
+        return 'arg was undefined'
+      }
+
+      throw new Error(`Expected arg to be undefined, but it was ${arg}`)
     },
     'wait' () {
       return Promise.delay(2000)

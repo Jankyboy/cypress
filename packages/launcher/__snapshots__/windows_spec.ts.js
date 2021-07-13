@@ -41,6 +41,22 @@ exports['windows browser detection detects browsers as expected 1'] = [
   {
     "name": "chrome",
     "family": "chromium",
+    "channel": "beta",
+    "displayName": "Chrome Beta",
+    "versionRegex": {},
+    "binary": "google-chrome-beta",
+    "path": "C:/Program Files (x86)/Google/Chrome Beta/Application/chrome.exe",
+    "version": "6.7.8",
+    "findAppParams": {
+      "appName": "Google Chrome Beta.app",
+      "executable": "Contents/MacOS/Google Chrome Beta",
+      "appId": "com.google.Chrome.beta",
+      "versionProperty": "KSVersion"
+    }
+  },
+  {
+    "name": "chrome",
+    "family": "chromium",
     "channel": "canary",
     "displayName": "Canary",
     "versionRegex": {},
@@ -59,7 +75,6 @@ exports['windows browser detection detects browsers as expected 1'] = [
     "family": "firefox",
     "channel": "stable",
     "displayName": "Firefox",
-    "info": "Firefox support is currently in beta! You can help us continue to improve the Cypress + Firefox experience by [reporting any issues you find](https://on.cypress.io/new-issue).",
     "versionRegex": {},
     "binary": "firefox",
     "path": "C:/Program Files/Mozilla Firefox/firefox.exe",
@@ -76,7 +91,6 @@ exports['windows browser detection detects browsers as expected 1'] = [
     "family": "firefox",
     "channel": "dev",
     "displayName": "Firefox Developer Edition",
-    "info": "Firefox support is currently in beta! You can help us continue to improve the Cypress + Firefox experience by [reporting any issues you find](https://on.cypress.io/new-issue).",
     "versionRegex": {},
     "binary": [
       "firefox-developer-edition",
@@ -96,7 +110,6 @@ exports['windows browser detection detects browsers as expected 1'] = [
     "family": "firefox",
     "channel": "nightly",
     "displayName": "Firefox Nightly",
-    "info": "Firefox support is currently in beta! You can help us continue to improve the Cypress + Firefox experience by [reporting any issues you find](https://on.cypress.io/new-issue).",
     "versionRegex": {},
     "binary": [
       "firefox-nightly",
@@ -117,7 +130,10 @@ exports['windows browser detection detects browsers as expected 1'] = [
     "channel": "stable",
     "displayName": "Edge",
     "versionRegex": {},
-    "binary": "edge",
+    "binary": [
+      "edge",
+      "microsoft-edge"
+    ],
     "path": "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
     "version": "11",
     "findAppParams": {
@@ -165,7 +181,10 @@ exports['windows browser detection detects browsers as expected 1'] = [
     "channel": "dev",
     "displayName": "Edge Dev",
     "versionRegex": {},
-    "binary": "edge-dev",
+    "binary": [
+      "edge-dev",
+      "microsoft-edge-dev"
+    ],
     "path": "C:/Program Files (x86)/Microsoft/Edge Dev/Application/msedge.exe",
     "version": "13",
     "findAppParams": {
@@ -176,6 +195,12 @@ exports['windows browser detection detects browsers as expected 1'] = [
     }
   }
 ]
+
+exports['windows browser detection detects 64-bit Chrome Beta app path 1'] = {
+  "name": "chrome",
+  "version": "9.0.1",
+  "path": "C:/Program Files/Google/Chrome Beta/Application/chrome.exe"
+}
 
 exports['windows browser detection detects new Chrome 64-bit app path 1'] = {
   "name": "chrome",
@@ -189,7 +214,6 @@ exports['windows browser detection detects local Firefox installs 1'] = [
     "family": "firefox",
     "channel": "stable",
     "displayName": "Firefox",
-    "info": "Firefox support is currently in beta! You can help us continue to improve the Cypress + Firefox experience by [reporting any issues you find](https://on.cypress.io/new-issue).",
     "versionRegex": {},
     "binary": "firefox",
     "path": "C:/Users/flotwig/AppData/Local/Mozilla Firefox/firefox.exe",
@@ -206,7 +230,6 @@ exports['windows browser detection detects local Firefox installs 1'] = [
     "family": "firefox",
     "channel": "dev",
     "displayName": "Firefox Developer Edition",
-    "info": "Firefox support is currently in beta! You can help us continue to improve the Cypress + Firefox experience by [reporting any issues you find](https://on.cypress.io/new-issue).",
     "versionRegex": {},
     "binary": [
       "firefox-developer-edition",
@@ -226,7 +249,6 @@ exports['windows browser detection detects local Firefox installs 1'] = [
     "family": "firefox",
     "channel": "nightly",
     "displayName": "Firefox Nightly",
-    "info": "Firefox support is currently in beta! You can help us continue to improve the Cypress + Firefox experience by [reporting any issues you find](https://on.cypress.io/new-issue).",
     "versionRegex": {},
     "binary": [
       "firefox-nightly",

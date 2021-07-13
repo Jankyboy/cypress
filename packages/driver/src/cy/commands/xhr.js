@@ -214,9 +214,9 @@ const startXhrServer = (cy, state, config) => {
         log.snapshot('error').error(err)
       }
 
-      // re-throw the error since this came from AUT code, and needs to
-      // cause an 'uncaught:exception' event. This error will be caught in
-      // top.onerror with stack as 5th argument.
+      // cause an 'uncaught:exception' event, since this error originally
+      // occurs in the user's application. this will be caught by
+      // top.addEventListener('error')
       throw err
     },
 
@@ -249,20 +249,32 @@ const startXhrServer = (cy, state, config) => {
     },
 
     onAnyAbort: (route, xhr) => {
-      if (route && _.isFunction(route.onAbort)) {
+      if (!route || !_.isFunction(route.onAbort)) return
+
+      try {
         return route.onAbort.call(cy, xhr)
+      } catch (err) {
+        cy.fail(err, { async: true })
       }
     },
 
     onAnyRequest: (route, xhr) => {
-      if (route && _.isFunction(route.onRequest)) {
+      if (!route || !_.isFunction(route.onRequest)) return
+
+      try {
         return route.onRequest.call(cy, xhr)
+      } catch (err) {
+        cy.fail(err, { async: true })
       }
     },
 
     onAnyResponse: (route, xhr) => {
-      if (route && _.isFunction(route.onResponse)) {
+      if (!route || !_.isFunction(route.onResponse)) return
+
+      try {
         return route.onResponse.call(cy, xhr)
+      } catch (err) {
+        cy.fail(err, { async: true })
       }
     },
   })
@@ -329,6 +341,8 @@ module.exports = (Commands, Cypress, cy, state, config) => {
 
   return Commands.addAll({
     server (options) {
+      $errUtils.warnByPath('server.deprecated')
+
       let userOptions = options
 
       if (arguments.length === 0) {
@@ -351,6 +365,8 @@ module.exports = (Commands, Cypress, cy, state, config) => {
     },
 
     route (...args) {
+      $errUtils.warnByPath('route.deprecated')
+
       // TODO:
       // if we return a function which returns a promise
       // then we should be handling potential timeout issues

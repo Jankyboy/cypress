@@ -13,7 +13,7 @@ const threeTestsWithHooks = {
   suites: { 'suite 1': { hooks: ['before', 'beforeEach', 'afterEach', 'after'], tests: ['test 1', 'test 2', 'test 3'] } },
 }
 
-describe('src/cypress/runner', () => {
+describe('src/cypress/runner', { retries: 0 }, () => {
   describe('tests finish with correct state', () => {
     describe('hook failures', () => {
       it('fail in [before]', () => {
@@ -303,6 +303,27 @@ describe('src/cypress/runner', () => {
       runIsolatedCypress(threeTestsWithHooks)
       .then(() => {
         snapshotMochaEvents()
+      })
+    })
+  })
+
+  describe('event listeners', () => {
+    // https://github.com/cypress-io/cypress/issues/8701
+    it('does not hang when error thrown in test:after:run', () => {
+      runIsolatedCypress(() => {
+        Cypress.on('test:after:run', (test) => {
+          throw new Error('I am throwing')
+        })
+
+        describe('page', { defaultCommandTimeout: 400 }, () => {
+          it('t1', { retries: 2 }, () => {
+            assert(false)
+          })
+
+          it('t2', () => {
+            assert(true)
+          })
+        })
       })
     })
   })

@@ -5,7 +5,6 @@ const $dom = require('../../dom')
 const $errUtils = require('../../cypress/error_utils')
 
 const reExistence = /exist/
-const reEventually = /^eventually/
 const reHaveLength = /length/
 
 module.exports = function (Commands, Cypress, cy, state) {
@@ -55,20 +54,19 @@ module.exports = function (Commands, Cypress, cy, state) {
     const originalObj = exp._obj
     let err
 
-    if (reEventually.test(chainers)) {
-      err = $errUtils.cypressErrByPath('should.eventually_deprecated')
-      err.retry = false
-      throwAndLogErr(err)
-    }
-
     const isCheckingExistence = reExistence.test(chainers)
     const isCheckingLengthOrExistence = isCheckingExistence || reHaveLength.test(chainers)
 
     const applyChainer = function (memo, value) {
       if (value === lastChainer && !isCheckingExistence) {
-        if (_.isFunction(memo[value])) {
+        // https://github.com/cypress-io/cypress/issues/16006
+        // Referring some commands like 'visible'  triggers assert function in chai_jquery.js
+        // It creates duplicated messages and confuses users.
+        const cmd = memo[value]
+
+        if (_.isFunction(cmd)) {
           try {
-            return memo[value].apply(memo, args)
+            return cmd.apply(memo, args)
           } catch (err) {
             // if we made it all the way to the actual
             // assertion but its set to retry false then
@@ -81,7 +79,7 @@ module.exports = function (Commands, Cypress, cy, state) {
             throw err
           }
         } else {
-          return memo[value]
+          return cmd
         }
       } else {
         return memo[value]

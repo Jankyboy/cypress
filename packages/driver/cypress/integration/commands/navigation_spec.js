@@ -73,10 +73,6 @@ describe('src/cy/commands/navigation', () => {
       })
     })
 
-    it('sdfsdfdsf', function () {
-      $('sd')
-    })
-
     it('removes window:load listeners', () => {
       const listeners = cy.listeners('window:load')
 
@@ -166,7 +162,7 @@ describe('src/cy/commands/navigation', () => {
         cy.reload(1, 2, 3)
       })
 
-      it('throws passing 2 invalid arguments', (done) => {
+      it('throws passing 2 invalid arguments', { defaultCommandTimeout: 200, retries: 1 }, (done) => {
         cy.on('fail', (err) => {
           expect(err.message).to.eq('`cy.reload()` can only accept a boolean or `options` as its arguments.')
           expect(err.docsUrl).to.eq('https://on.cypress.io/reload')
@@ -712,6 +708,18 @@ describe('src/cy/commands/navigation', () => {
     // https://github.com/cypress-io/cypress/issues/1727
     it('can visit a page with undefined content type and html-shaped body', () => {
       cy.visit('http://localhost:3500/undefined-content-type')
+    })
+
+    // https://github.com/cypress-io/cypress/issues/14445
+    it('should eventually fail on assertion despite redirects', (done) => {
+      cy.on('fail', (err) => {
+        expect(err.message).to.contain('The application redirected to')
+
+        done()
+      })
+
+      cy.visit('fixtures/redirection-loop-a.html')
+      cy.get('div').should('contain', 'this should fail?')
     })
 
     describe('when only hashes are changing', () => {
@@ -1726,6 +1734,11 @@ describe('src/cy/commands/navigation', () => {
         })
 
         cy.visit('https://google.com/foo')
+      })
+
+      // https://github.com/cypress-io/cypress/issues/8506
+      it('accepts text/html; + parameter as content-type', () => {
+        cy.visit('http://localhost:3500/html-content-type-with-charset-param')
       });
 
       // https://github.com/cypress-io/cypress/issues/3101
@@ -1733,7 +1746,7 @@ describe('src/cy/commands/navigation', () => {
         contentType: 'application/json',
         pathName: 'json-content-type',
       }, {
-        contentType: 'text/html; charset=utf-8,text/html',
+        contentType: 'text/image',
         pathName: 'invalid-content-type',
       }]
       .forEach(({ contentType, pathName }) => {

@@ -6,7 +6,7 @@ const stream = require('stream')
 const Promise = require('bluebird')
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path
 const BlackHoleStream = require('black-hole-stream')
-const fs = require('./util/fs')
+const { fs } = require('./util/fs')
 
 // extra verbose logs for logging individual frames
 const debugFrames = require('debug')('cypress-verbose:server:video:frames')
@@ -27,6 +27,33 @@ const deferredPromise = function () {
 }
 
 module.exports = {
+  generateFfmpegChaptersConfig (tests) {
+    if (!tests) {
+      return null
+    }
+
+    const configString = tests.map((test) => {
+      return test.attempts.map((attempt, i) => {
+        const { videoTimestamp, wallClockDuration } = attempt
+        let title = test.title ? test.title.join(' ') : ''
+
+        if (i > 0) {
+          title += `attempt ${i}`
+        }
+
+        return [
+          '[CHAPTER]',
+          'TIMEBASE=1/1000',
+          `START=${videoTimestamp - wallClockDuration}`,
+          `END=${videoTimestamp}`,
+          `title=${title}`,
+        ].join('\n')
+      }).join('\n')
+    }).join('\n')
+
+    return `;FFMETADATA1\n${configString}`
+  },
+
   getMsFromDuration (duration) {
     return utils.timemarkToSeconds(duration) * 1000
   },
@@ -48,6 +75,18 @@ module.exports = {
       })
     }).tapCatch((err) => {
       return debug('getting codecData failed', { err })
+    })
+  },
+
+  getChapters (fileName) {
+    return new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(fileName, ['-show_chapters'], (err, metadata) => {
+        if (err) {
+          return reject(err)
+        }
+
+        resolve(metadata)
+      })
     })
   },
 
@@ -116,18 +155,21 @@ module.exports = {
         return
       }
 
-      if (lengths[data.length]) {
+      if (options.webmInput) {
+        if (lengths[data.length]) {
         // this prevents multiple chunks of webm metadata from being written to the stream
         // which would crash ffmpeg
-        debugFrames('duplicate length frame received:', data.length)
+          debugFrames('duplicate length frame received:', data.length)
 
-        return
+          return
+        }
+
+        lengths[data.length] = true
       }
 
       writtenChunksCount++
 
       debugFrames('writing video frame')
-      lengths[data.length] = true
 
       if (wantsWrite) {
         if (!(wantsWrite = pt.write(data))) {
@@ -177,6 +219,10 @@ module.exports = {
           return ended.resolve()
         })
 
+        // this is to prevent the error "invalid data input" error
+        // when input frames have an odd resolution
+        .videoFilters(`crop='floor(in_w/2)*2:floor(in_h/2)*2'`)
+
         if (options.webmInput) {
           cmd
           .inputFormat('webm')
@@ -188,13 +234,6 @@ module.exports = {
           // 'vsync vfr' (variable framerate) works perfectly but fails on top page navigation
           // since video timestamp resets to 0, timestamps already written will be dropped
           // .outputOption('-vsync vfr')
-
-          // this is to prevent the error "invalid data input" error
-          // when input frames have an odd resolution
-          .videoFilters(`crop='floor(in_w/2)*2:floor(in_h/2)*2'`)
-
-          // same as above but scales instead of crops
-          // .videoFilters("scale=trunc(iw/2)*2:trunc(ih/2)*2")
         } else {
           cmd
           .inputFormat('image2pipe')
@@ -217,30 +256,53 @@ module.exports = {
     })
   },
 
-  process (name, cname, videoCompression, onProgress = function () {}) {
+  async process (name, cname, videoCompression, ffmpegchaptersConfig, onProgress = function () {}) {
+    const metaFileName = `${name}.meta`
+
+    const maybeGenerateMetaFile = Promise.method(() => {
+      if (!ffmpegchaptersConfig) {
+        return false
+      }
+
+      // Writing the metadata to filesystem is necessary because fluent-ffmpeg is just a wrapper of ffmpeg command.
+      return fs.writeFile(metaFileName, ffmpegchaptersConfig).then(() => true)
+    })
+
+    const addChaptersMeta = await maybeGenerateMetaFile()
+
     let total = null
 
     return new Promise((resolve, reject) => {
       debug('processing video from %s to %s video compression %o',
         name, cname, videoCompression)
 
-      ffmpeg()
-      .input(name)
-      .videoCodec('libx264')
-      .outputOptions([
+      const command = ffmpeg()
+      const outputOptions = [
         '-preset fast',
         `-crf ${videoCompression}`,
-      ])
+      ]
+
+      if (addChaptersMeta) {
+        command.input(metaFileName)
+        outputOptions.push('-map_metadata 1')
+      }
+
+      command.input(name)
+      .videoCodec('libx264')
+      .outputOptions(outputOptions)
       // .videoFilters("crop='floor(in_w/2)*2:floor(in_h/2)*2'")
       .on('start', (command) => {
-        return debug('compression started %o', { command })
-      }).on('codecData', (data) => {
+        debug('compression started %o', { command })
+      })
+      .on('codecData', (data) => {
         debug('compression codec data: %o', data)
 
         total = utils.timemarkToSeconds(data.duration)
-      }).on('stderr', (stderr) => {
-        return debug('compression stderr log %o', { message: stderr })
-      }).on('progress', (progress) => {
+      })
+      .on('stderr', (stderr) => {
+        debug('compression stderr log %o', { message: stderr })
+      })
+      .on('progress', (progress) => {
         // bail if we dont have total yet
         if (!total) {
           return
@@ -255,11 +317,13 @@ module.exports = {
         if (percent < 1) {
           return onProgress(percent)
         }
-      }).on('error', (err, stdout, stderr) => {
+      })
+      .on('error', (err, stdout, stderr) => {
         debug('compression errored: %o', { error: err.message, stdout, stderr })
 
         return reject(err)
-      }).on('end', () => {
+      })
+      .on('end', () => {
         debug('compression ended')
 
         // we are done progressing
@@ -268,6 +332,11 @@ module.exports = {
         // rename and obliterate the original
         return fs.moveAsync(cname, name, {
           overwrite: true,
+        })
+        .then(() => {
+          if (addChaptersMeta) {
+            return fs.unlink(metaFileName)
+          }
         })
         .then(() => {
           return resolve()

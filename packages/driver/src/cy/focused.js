@@ -72,7 +72,7 @@ const create = (state) => {
     return el.dispatchEvent(focusoutEvt)
   }
 
-  const fireFocus = (el) => {
+  const fireFocus = (el, opts) => {
     // body will never emit focus events (unless it's contenteditable)
     // so we avoid simulating this
     if ($elements.isBody(el) && !$elements.isContentEditable(el)) {
@@ -112,7 +112,7 @@ const create = (state) => {
 
     $elements.callNativeMethod(el, 'addEventListener', 'focus', onFocus)
 
-    $elements.callNativeMethod(el, 'focus')
+    $elements.callNativeMethod(el, 'focus', opts)
 
     cleanup()
 
@@ -157,7 +157,7 @@ const create = (state) => {
     return el.dispatchEvent(focusinEvt)
   }
 
-  const interceptFocus = (el) => {
+  const interceptFocus = (el, win, opts) => {
     // normally programmatic focus calls cause "primed" focus/blur
     // events if the window is not in focus
     // so we fire fake events to act as if the window
@@ -165,12 +165,12 @@ const create = (state) => {
     const $focused = getFocused()
 
     if ((!$focused || $focused[0] !== el) && $elements.isW3CFocusable(el)) {
-      fireFocus(el)
+      fireFocus(el, opts)
 
       return
     }
 
-    $elements.callNativeMethod(el, 'focus')
+    $elements.callNativeMethod(el, 'focus', opts)
   }
 
   const interceptBlur = (el) => {

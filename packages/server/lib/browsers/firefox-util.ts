@@ -6,6 +6,8 @@ import { Command } from 'marionette-client/lib/marionette/message.js'
 import util from 'util'
 import Foxdriver from '@benmalka/foxdriver'
 import * as protocol from './protocol'
+import { CdpAutomation } from './cdp_automation'
+import * as CriClient from './cri-client'
 
 const errors = require('../errors')
 
@@ -93,6 +95,13 @@ const attachToTabMemory = Bluebird.method((tab) => {
   })
 })
 
+async function setupRemote (remotePort, automation, onError) {
+  const wsUrl = await protocol.getWsTargetFor(remotePort, 'Firefox')
+  const criClient = await CriClient.create(wsUrl, onError)
+
+  new CdpAutomation(criClient.send, criClient.on, automation)
+}
+
 const logGcDetails = () => {
   const reducedTimings = {
     ...timings,
@@ -158,14 +167,18 @@ export default {
   },
 
   setup ({
+    automation,
     extensions,
+    onError,
     url,
     marionettePort,
     foxdriverPort,
+    remotePort,
   }) {
     return Bluebird.all([
       this.setupFoxdriver(foxdriverPort),
       this.setupMarionette(extensions, url, marionettePort),
+      remotePort && setupRemote(remotePort, automation, onError),
     ])
   },
 
@@ -192,7 +205,7 @@ export default {
           // TODO: figure out why tab.memory is sometimes undefined
           if (!tab.memory) return
 
-          let start = Date.now()
+          const start = Date.now()
 
           return tab.memory.forceGarbageCollection()
           .then(() => {
@@ -207,7 +220,7 @@ export default {
           // TODO: figure out why tab.memory is sometimes undefined
           if (!tab.memory) return
 
-          let start = Date.now()
+          const start = Date.now()
 
           return tab.memory.forceCycleCollection()
           .then(() => {

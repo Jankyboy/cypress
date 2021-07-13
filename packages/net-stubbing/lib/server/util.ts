@@ -1,7 +1,7 @@
 import _ from 'lodash'
 import Debug from 'debug'
 import isHtml from 'is-html'
-import { ServerResponse, IncomingMessage } from 'http'
+import { IncomingMessage } from 'http'
 import {
   RouteMatcherOptionsGeneric,
   STRING_MATCHER_FIELDS,
@@ -13,9 +13,15 @@ import CyServer from '@packages/server'
 import { Socket } from 'net'
 import { GetFixtureFn } from './types'
 import ThrottleStream from 'throttle'
+import MimeTypes from 'mime-types'
+import { CypressIncomingRequest } from '@packages/proxy'
+import { InterceptedRequest } from './intercepted-request'
+import { caseInsensitiveGet, caseInsensitiveHas } from '../util'
 
 // TODO: move this into net-stubbing once cy.route is removed
 import { parseContentType } from '@packages/server/lib/controllers/xhrs'
+import { CyHttpMessages } from '../external-types'
+import { getEncoding } from 'istextorbinary'
 
 const debug = Debug('cypress:net-stubbing:server:util')
 
@@ -74,33 +80,61 @@ function _getFakeClientResponse (opts: {
   return clientResponse
 }
 
-const caseInsensitiveGet = function (obj, lowercaseProperty) {
-  for (let key of Object.keys(obj)) {
-    if (key.toLowerCase() === lowercaseProperty) {
-      return obj[key]
+export function setDefaultHeaders (req: CypressIncomingRequest, res: IncomingMessage) {
+  const setDefaultHeader = (lowercaseHeader: string, defaultValueFn: () => string) => {
+    if (!caseInsensitiveHas(res.headers, lowercaseHeader)) {
+      res.headers[lowercaseHeader] = defaultValueFn()
     }
   }
+
+  // https://github.com/cypress-io/cypress/issues/15050
+  // Check if res.headers has a custom header.
+  // If so, set access-control-expose-headers to '*'.
+  const hasCustomHeader = Object.keys(res.headers).some((header) => {
+    // The list of header items that can be accessed from cors request
+    // without access-control-expose-headers
+    // @see https://stackoverflow.com/a/37931084/1038927
+    return ![
+      'cache-control',
+      'content-language',
+      'content-type',
+      'expires',
+      'last-modified',
+      'pragma',
+    ].includes(header.toLowerCase())
+  })
+
+  // We should not override the user's access-control-expose-headers setting.
+  if (hasCustomHeader && !res.headers['access-control-expose-headers']) {
+    setDefaultHeader('access-control-expose-headers', _.constant('*'))
+  }
+
+  setDefaultHeader('access-control-allow-origin', () => caseInsensitiveGet(req.headers, 'origin') || '*')
+  setDefaultHeader('access-control-allow-credentials', _.constant('true'))
 }
 
-export async function setBodyFromFixture (getFixtureFn: GetFixtureFn, staticResponse: BackendStaticResponse) {
+export async function setResponseFromFixture (getFixtureFn: GetFixtureFn, staticResponse: BackendStaticResponse) {
   const { fixture } = staticResponse
 
   if (!fixture) {
     return
   }
 
-  const data = await getFixtureFn(fixture.filePath, { encoding: fixture.encoding })
+  const data = await getFixtureFn(fixture.filePath, { encoding: fixture.encoding || null })
 
   const { headers } = staticResponse
 
   if (!headers || !caseInsensitiveGet(headers, 'content-type')) {
-    _.set(staticResponse, 'headers.content-type', parseContentType(data))
+    // attempt to detect mimeType based on extension, fall back to regular cy.fixture inspection otherwise
+    const mimeType = MimeTypes.lookup(fixture.filePath) || parseContentType(data)
+
+    _.set(staticResponse, 'headers.content-type', mimeType)
   }
 
   function getBody (): string {
     // NOTE: for backwards compatibility with cy.route
     if (data === null) {
-      return ''
+      return JSON.stringify('')
     }
 
     if (!_.isBuffer(data) && !_.isString(data)) {
@@ -116,22 +150,22 @@ export async function setBodyFromFixture (getFixtureFn: GetFixtureFn, staticResp
 
 /**
  * Using an existing response object, send a response shaped by a StaticResponse object.
- * @param res Response object.
+ * @param backendRequest BackendRequest object.
  * @param staticResponse BackendStaticResponse object.
- * @param onResponse Will be called with the response metadata + body stream
- * @param resStream Optionally, provide a Readable stream to be used as the response body (overrides staticResponse.body)
  */
-export function sendStaticResponse (res: ServerResponse, staticResponse: BackendStaticResponse, onResponse: (incomingRes: IncomingMessage, stream: Readable) => void) {
-  if (staticResponse.forceNetworkError) {
-    res.connection.destroy()
-    res.destroy()
+export async function sendStaticResponse (backendRequest: Pick<InterceptedRequest, 'res' | 'onError' | 'onResponse'>, staticResponse: BackendStaticResponse) {
+  const { onError, onResponse } = backendRequest
 
-    return
+  if (staticResponse.forceNetworkError) {
+    debug('forcing network error')
+    const err = new Error('forceNetworkError called')
+
+    return onError(err)
   }
 
   const statusCode = staticResponse.statusCode || 200
   const headers = staticResponse.headers || {}
-  const body = staticResponse.body || ''
+  const body = backendRequest.res.body = _.isUndefined(staticResponse.body) ? '' : staticResponse.body
 
   const incomingRes = _getFakeClientResponse({
     statusCode,
@@ -139,14 +173,13 @@ export function sendStaticResponse (res: ServerResponse, staticResponse: Backend
     body,
   })
 
-  const bodyStream = getBodyStream(body, _.pick(staticResponse, 'throttleKbps', 'continueResponseAt'))
+  const bodyStream = await getBodyStream(body, _.pick(staticResponse, 'throttleKbps', 'delay'))
 
-  onResponse(incomingRes, bodyStream)
+  onResponse!(incomingRes, bodyStream)
 }
 
-export function getBodyStream (body: Buffer | string | Readable | undefined, options: { continueResponseAt?: number, throttleKbps?: number }): Readable {
-  const { continueResponseAt, throttleKbps } = options
-  const delayMs = continueResponseAt ? _.max([continueResponseAt - Date.now(), 0]) : 0
+export async function getBodyStream (body: Buffer | string | Readable | undefined, options: { delay?: number, throttleKbps?: number }): Promise<Readable> {
+  const { delay, throttleKbps } = options
   const pt = new PassThrough()
 
   const sendBody = () => {
@@ -159,7 +192,7 @@ export function getBodyStream (body: Buffer | string | Readable | undefined, opt
       writable.pipe(pt)
     }
 
-    if (body) {
+    if (!_.isUndefined(body)) {
       if ((body as Readable).pipe) {
         return (body as Readable).pipe(writable)
       }
@@ -170,7 +203,57 @@ export function getBodyStream (body: Buffer | string | Readable | undefined, opt
     return writable.end()
   }
 
-  delayMs ? setTimeout(sendBody, delayMs) : sendBody()
+  delay ? await wait(sendBody, delay) : sendBody()
 
   return pt
+}
+
+function wait (fn, ms) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve(fn())
+    }, ms)
+  })
+}
+
+export function mergeDeletedHeaders (before: CyHttpMessages.BaseMessage, after: CyHttpMessages.BaseMessage) {
+  for (const k in before.headers) {
+    // a header was deleted from `after` but was present in `before`, delete it in `before` too
+    !after.headers[k] && delete before.headers[k]
+  }
+}
+
+export function mergeWithPreservedBuffers (before: CyHttpMessages.BaseMessage, after: Partial<CyHttpMessages.BaseMessage>) {
+  // lodash merge converts Buffer into Array (by design)
+  // https://github.com/lodash/lodash/issues/2964
+  // @see https://github.com/cypress-io/cypress/issues/15898
+  _.mergeWith(before, after, (_a, b) => {
+    if (b instanceof Buffer) {
+      return b
+    }
+
+    return undefined
+  })
+}
+
+type BodyEncoding = 'utf8' | 'binary' | null
+
+export function getBodyEncoding (req: CyHttpMessages.IncomingRequest): BodyEncoding {
+  if (!req || !req.body) {
+    return null
+  }
+
+  // a simple heuristic for detecting UTF8 encoded requests
+  if (req.headers && req.headers['content-type']) {
+    const contentTypeHeader = req.headers['content-type'] as string
+    const contentType = contentTypeHeader.toLowerCase()
+
+    if (contentType.includes('charset=utf-8') || contentType.includes('charset="utf-8"')) {
+      return 'utf8'
+    }
+  }
+
+  // with fallback to inspecting the buffer using
+  // https://github.com/bevry/istextorbinary
+  return getEncoding(req.body)
 }

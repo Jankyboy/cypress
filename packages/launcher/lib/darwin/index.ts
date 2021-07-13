@@ -19,6 +19,12 @@ export const browsers: Detectors = {
       appId: 'com.google.Chrome',
       versionProperty: 'KSVersion',
     },
+    beta: {
+      appName: 'Google Chrome Beta.app',
+      executable: 'Contents/MacOS/Google Chrome Beta',
+      appId: 'com.google.Chrome.beta',
+      versionProperty: 'KSVersion',
+    },
     canary: {
       appName: 'Google Chrome Canary.app',
       executable: 'Contents/MacOS/Google Chrome Canary',
@@ -83,6 +89,10 @@ export const browsers: Detectors = {
 }
 
 export const getVersionString = linuxHelper.getVersionString
+
+export const getVersionNumber = linuxHelper.getVersionNumber
+
+export const getPathData = linuxHelper.getPathData
 
 export function detect (browser: Browser): Promise<DetectedBrowser> {
   let findAppParams = get(browsers, [browser.name, browser.channel])

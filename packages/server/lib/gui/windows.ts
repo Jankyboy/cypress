@@ -5,7 +5,7 @@ import { BrowserWindow } from 'electron'
 import Debug from 'debug'
 import cwd from '../cwd'
 import savedState from '../saved_state'
-const cyDesktop = require('@packages/desktop-gui')
+import { getPathToDesktopIndex } from '@packages/resolve-dist'
 
 const debug = Debug('cypress:server:windows')
 
@@ -21,7 +21,7 @@ let recentlyCreatedWindow = false
 const getUrl = function (type) {
   switch (type) {
     case 'INDEX':
-      return cyDesktop.getPathToIndex()
+      return getPathToDesktopIndex()
     default:
       throw new Error(`No acceptable window type found for: '${type}'`)
   }
@@ -209,6 +209,7 @@ export function create (projectRoot, _options: WindowOptions = {}, newBrowserWin
   return win
 }
 
+// open desktop-gui BrowserWindow
 export function open (projectRoot, options: WindowOptions = {}, newBrowserWindow = _newBrowserWindow) {
   // if we already have a window open based
   // on that type then just show + focus it!
@@ -229,6 +230,7 @@ export function open (projectRoot, options: WindowOptions = {}, newBrowserWindow
     height: 500,
     show: true,
     webPreferences: {
+      contextIsolation: true,
       preload: cwd('lib', 'ipc', 'ipc.js'),
     },
   })

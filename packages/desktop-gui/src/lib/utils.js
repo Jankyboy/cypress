@@ -1,6 +1,7 @@
 import _ from 'lodash'
 import gravatar from 'gravatar'
-import duration from '../../../server/lib/util/duration'
+import duration from '@packages/server/lib/util/duration'
+import dayjs from 'dayjs'
 
 const cyDirRegex = /^cypress\/integration\//g
 
@@ -8,6 +9,10 @@ const osIconLookup = {
   win32: 'windows',
   darwin: 'apple',
   linux: 'linux',
+}
+
+export const getFormattedTimeFromNow = (timeAsIsoString) => {
+  return dayjs(timeAsIsoString).fromNow()
 }
 
 export const durationFormatted = duration.format

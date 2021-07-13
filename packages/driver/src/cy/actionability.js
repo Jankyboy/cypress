@@ -4,6 +4,7 @@ const Promise = require('bluebird')
 const debug = require('debug')('cypress:driver:actionability')
 
 const $dom = require('../dom')
+const $elements = require('../dom/elements')
 const $errUtils = require('../cypress/error_utils')
 
 const delay = 50
@@ -20,6 +21,13 @@ const dispatchPrimedChangeEvents = function (state) {
   if (changeEvent) {
     return changeEvent()
   }
+}
+
+const scrollBehaviorOptionsMap = {
+  top: 'start',
+  bottom: 'end',
+  center: 'center',
+  nearest: 'nearest',
 }
 
 const getPositionFromArguments = function (positionOrX, y, options) {
@@ -76,6 +84,11 @@ const ensureElIsNotCovered = function (cy, win, $el, fromElViewport, options, lo
       // use the initial coords fromElViewport
       return ensureDescendents(fromElViewport)
     } catch (err) {
+      // if scrolling to element is off we re-throw as there is nothing to do
+      if (options.scrollBehavior === false) {
+        throw err
+      }
+
       // if we're being covered by a fixed position element then
       // we're going to attempt to continously scroll the element
       // from underneath this fixed position element until we can't
@@ -248,16 +261,29 @@ const getCoordinatesForEl = function (cy, $el, options) {
 }
 
 const ensureNotAnimating = function (cy, $el, coordsHistory, animationDistanceThreshold) {
-  // if we dont have at least 2 points
-  // then automatically retry
+  // if we dont have at least 2 points, we throw this error to force a
+  // retry, which will get us another point.
+  // this error is purposefully generic because if the actionability
+  //check times out, this error is the one displayed to the user and
+  // saying something like "coordsHistory must be at least 2 sets
+  // of coords" is not very useful.
+  // that would only happen if the actionability check times out, which
+  // shouldn't happen with default timeouts, but could theoretically
+  // on a very, very slow system
+  // https://github.com/cypress-io/cypress/issues/3738
   if (coordsHistory.length < 2) {
-    $errUtils.throwErrByPath('dom.animation_coords_history_invalid')
+    $errUtils.throwErrByPath('dom.actionability_failed', {
+      args: {
+        node: $dom.stringify($el),
+        cmd: cy.state('current').get('name'),
+      },
+    })
   }
 
   // verify that our element is not currently animating
   // by verifying it is still at the same coordinates within
   // 5 pixels of x/y
-  return cy.ensureElementIsNotAnimating($el, coordsHistory, animationDistanceThreshold)
+  cy.ensureElementIsNotAnimating($el, coordsHistory, animationDistanceThreshold)
 }
 
 const verify = function (cy, $el, options, callbacks) {
@@ -296,8 +322,33 @@ const verify = function (cy, $el, options, callbacks) {
     }
   }
 
+  // scroll-behavior: smooth delays scrolling and causes the actionability
+  // check to fail, so the only solution is to remove the behavior and
+  // make scrolling occur instantly. we do this by adding a style tag
+  // and then removing it after we finish scrolling
+  // https://github.com/cypress-io/cypress/issues/3200
+  const addScrollBehaviorFix = () => {
+    let style
+
+    try {
+      const doc = $el.get(0).ownerDocument
+
+      style = doc.createElement('style')
+      style.innerHTML = '* { scroll-behavior: inherit !important; }'
+      // there's guaranteed to be a <script> tag, so that's the safest thing
+      // to query for and add the style tag after
+      doc.querySelector('script').after(style)
+    } catch (err) {
+      // the above shouldn't error, but out of an abundance of caution, we
+      // ignore any errors since this fix isn't worth failing the test over
+    }
+
+    return () => {
+      if (style) style.remove()
+    }
+  }
+
   return Promise.try(() => {
-    let retryActionability
     const coordsHistory = []
 
     const runAllChecks = function () {
@@ -312,13 +363,20 @@ const verify = function (cy, $el, options, callbacks) {
           cy.ensureNotDisabled($el, _log)
         }
 
-        // scroll the element into view
-        $el.get(0).scrollIntoView()
+        if (options.scrollBehavior !== false) {
+          // scroll the element into view
+          const scrollBehavior = scrollBehaviorOptionsMap[options.scrollBehavior]
 
-        debug('scrollIntoView:', $el[0])
+          const removeScrollBehaviorFix = addScrollBehaviorFix()
 
-        if (onScroll) {
-          onScroll($el, 'element')
+          debug('scrollIntoView:', $el[0])
+          $el.get(0).scrollIntoView({ block: scrollBehavior })
+
+          removeScrollBehaviorFix()
+
+          if (onScroll) {
+            onScroll($el, 'element')
+          }
         }
 
         // ensure its visible
@@ -351,7 +409,9 @@ const verify = function (cy, $el, options, callbacks) {
 
         // then we ensure the element isnt animating
         ensureNotAnimating(cy, $el, coordsHistory, options.animationDistanceThreshold)
+      }
 
+      if (force !== true) {
         // now that we know our element isn't animating its time
         // to figure out if it's being covered by another element.
         // this calculation is relative from the viewport so we
@@ -360,8 +420,16 @@ const verify = function (cy, $el, options, callbacks) {
       }
 
       // pass our final object into onReady
-      const finalEl = $elAtCoords != null ? $elAtCoords : $el
       const finalCoords = getCoordinatesForEl(cy, $el, options)
+      let finalEl
+
+      // When a contenteditable element is selected, we don't go deeper,
+      // because it is treated as a rich text field to users.
+      if ($elements.hasContenteditableAttr($el.get(0))) {
+        finalEl = $el
+      } else {
+        finalEl = $elAtCoords != null ? $elAtCoords : $el
+      }
 
       return onReady(finalEl, finalCoords)
     }
@@ -370,7 +438,7 @@ const verify = function (cy, $el, options, callbacks) {
     // element passes every single check, we MUST fire the event
     // synchronously else we risk the state changing between
     // the checks and firing the event!
-    return (retryActionability = function () {
+    const retryActionability = () => {
       try {
         return runAllChecks()
       } catch (err) {
@@ -378,7 +446,9 @@ const verify = function (cy, $el, options, callbacks) {
 
         return cy.retry(retryActionability, options)
       }
-    })()
+    }
+
+    return retryActionability()
   })
 }
 

@@ -1022,19 +1022,12 @@ describe('src/cy/commands/xhr', () => {
       })
 
       it('sets err on log when caused by code errors', function (done) {
-        const uncaughtException = cy.stub().returns(true)
-
-        cy.on('uncaught:exception', uncaughtException)
-
         cy.on('fail', (err) => {
           const { lastLog } = this
 
           expect(this.logs.length).to.eq(1)
           expect(lastLog.get('name')).to.eq('xhr')
           expect(lastLog.get('error').message).contain('foo is not defined')
-          // since this is AUT code, we should allow error to be caught in 'uncaught:exception' hook
-          // https://github.com/cypress-io/cypress/issues/987
-          expect(uncaughtException).calledOnce
 
           done()
         })
@@ -1057,8 +1050,8 @@ describe('src/cy/commands/xhr', () => {
 
           expect(this.logs.length).to.eq(1)
           expect(lastLog.get('name')).to.eq('xhr')
-          expect(err).to.eq(lastLog.get('error'))
-          expect(err).to.eq(e)
+          expect(err.message).to.include(lastLog.get('error').message)
+          expect(err.message).to.include(e.message)
 
           done()
         })
@@ -1081,6 +1074,15 @@ describe('src/cy/commands/xhr', () => {
   })
 
   context('#server', () => {
+    it('logs deprecation warning', () => {
+      cy.stub(Cypress.utils, 'warning')
+
+      cy.server()
+      .then(function () {
+        expect(Cypress.utils.warning).to.be.calledWithMatch(/^`cy\.server\(\)` has been deprecated and will be moved to a plugin in a future release\. Consider migrating to using `cy\.intercept\(\)` instead\./)
+      })
+    })
+
     it('sets serverIsStubbed', () => {
       cy.server().then(() => {
         expect(cy.state('serverIsStubbed')).to.be.true
@@ -1218,7 +1220,6 @@ describe('src/cy/commands/xhr', () => {
               alias: 'getFoo',
               aliasType: 'route',
               type: 'parent',
-              error: err,
               instrument: 'command',
               message: '',
               event: true,
@@ -1229,6 +1230,8 @@ describe('src/cy/commands/xhr', () => {
             _.each(obj, (value, key) => {
               expect(value).deep.eq(lastLog.get(key), `expected key: ${key} to eq value: ${value}`)
             })
+
+            expect(err.message).to.include(lastLog.get('error').message)
 
             done()
           })
@@ -1258,6 +1261,15 @@ describe('src/cy/commands/xhr', () => {
 
       cy.server().then(function () {
         this.route = cy.spy(cy.state('server'), 'route')
+      })
+    })
+
+    it('logs deprecation warning', () => {
+      cy.stub(Cypress.utils, 'warning')
+
+      cy.route('*')
+      .then(function () {
+        expect(Cypress.utils.warning).to.be.calledWithMatch(/^`cy\.route\(\)` has been deprecated and will be moved to a plugin in a future release\. Consider migrating to using `cy\.intercept\(\)` instead\./)
       })
     })
 
@@ -1642,7 +1654,7 @@ describe('src/cy/commands/xhr', () => {
 
       cy.route('GET', 'http://example.com/%E0%A4%A')
       .then(() => {
-        expect(Cypress.utils.warning).to.not.be.called
+        expect(Cypress.utils.warning).to.not.be.calledWithMatch(/percent\-encoded characters/)
       })
     })
 
@@ -1654,31 +1666,34 @@ describe('src/cy/commands/xhr', () => {
       })
     })
 
-    describe('deprecations', () => {
-      beforeEach(function () {
-        this.warn = cy.spy(window.top.console, 'warn')
-      })
+    describe('matches pattern', () => {
+      const testMatchesPattern = (pattern, href, expectMatch) => {
+        return (done) => {
+          cy
+          .route(pattern).as('getFoo')
+          .window().then((win) => {
+            const xhr = new win.XMLHttpRequest
 
-      it('logs on {force404: false}', () => {
-        cy.server({ force404: false })
-        .then(function () {
-          expect(this.warn).to.be.calledWith('Cypress Warning: Passing `cy.server({force404: false})` is now the default behavior of `cy.server()`. You can safely remove this option.')
-        })
-      })
+            xhr.open('get', href)
+            xhr.send()
+          })
 
-      it('does not log on {force404: true}', () => {
-        cy.server({ force404: true })
-        .then(function () {
-          expect(this.warn).not.to.be.called
-        })
-      })
+          if (expectMatch) {
+            cy.wait('@getFoo').then(() => done())
+          } else {
+            cy.on('fail', (err) => {
+              expect(err.message).to.include('No request ever occurred.')
+              done()
+            })
 
-      it('logs on {stub: false}', () => {
-        cy.server({ stub: false })
-        .then(function () {
-          expect(this.warn).to.be.calledWithMatch('Cypress Warning: Passing `cy.server({stub: false})` is now deprecated. You can safely remove: `{stub: false}`.\n\nhttps://on.cypress.io/deprecated-stub-false-on-server')
-        })
-      })
+            cy.wait('@getFoo', { timeout: 50 })
+          }
+        }
+      }
+
+      it('without querystring', testMatchesPattern('/foo', '/foo', true))
+      it('does not match with querystring', testMatchesPattern('/foo', '/foo?abc', false))
+      it('with querystring and wildcard', testMatchesPattern('/foo*', '/foo?abc', true))
     })
 
     describe('request response alias', () => {
@@ -1779,6 +1794,36 @@ describe('src/cy/commands/xhr', () => {
         .click()
 
         cy.contains('#result', '""').should('be.visible')
+      })
+
+      it('works if the JSON file has number content', () => {
+        cy
+        .server()
+        .route({
+          method: 'POST',
+          url: '/test-xhr',
+          response: 'fixture:number.json',
+        })
+        .visit('/fixtures/xhr-triggered.html')
+        .get('#trigger-xhr')
+        .click()
+
+        cy.contains('#result', 14).should('be.visible')
+      })
+
+      it('works if the JSON file has boolean content', () => {
+        cy
+        .server()
+        .route({
+          method: 'POST',
+          url: '/test-xhr',
+          response: 'fixture:boolean.json',
+        })
+        .visit('/fixtures/xhr-triggered.html')
+        .get('#trigger-xhr')
+        .click()
+
+        cy.contains('#result', /true/).should('be.visible')
       })
     })
 
@@ -1929,7 +1974,7 @@ describe('src/cy/commands/xhr', () => {
           // route + window + xhr log === 3
           expect(this.logs.length).to.eq(3)
           expect(lastLog.get('name')).to.eq('xhr')
-          expect(err).to.eq(lastLog.get('error'))
+          expect(err.message).to.include(lastLog.get('error').message)
 
           done()
         })

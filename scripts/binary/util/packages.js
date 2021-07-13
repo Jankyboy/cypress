@@ -9,7 +9,6 @@ const la = require('lazy-ass')
 const check = require('check-more-types')
 const execa = require('execa')
 const R = require('ramda')
-const os = require('os')
 const prettyMs = require('pretty-ms')
 const pluralize = require('pluralize')
 const debug = require('debug')('cypress:binary')
@@ -19,6 +18,7 @@ fs = Promise.promisifyAll(fs)
 glob = Promise.promisify(glob)
 
 const DEFAULT_PATHS = 'package.json'.split(' ')
+const rootYarnLock = fs.readFileSync(path.join(__dirname, '../../../yarn.lock'), 'utf8')
 
 const pathToPackageJson = function (packageFolder) {
   la(check.unemptyString(packageFolder), 'expected package path', packageFolder)
@@ -55,19 +55,6 @@ const runAllBuild = _.partial(npx, ['lerna', 'run', 'build-prod', '--ignore', 'c
 
 // removes transpiled JS files in the original package folders
 const runAllCleanJs = _.partial(npx, ['lerna', 'run', 'clean-js', '--ignore', 'cli'])
-
-// @returns string[] with names of packages, e.g. ['runner', 'driver', 'server']
-const getPackagesWithScript = (scriptName) => {
-  return Promise.resolve(glob('./packages/*/package.json'))
-  .map((pkgPath) => {
-    return fs.readJsonAsync(pkgPath)
-    .then((json) => {
-      if (json.scripts != null ? json.scripts.build : undefined) {
-        return path.basename(path.dirname(pkgPath))
-      }
-    })
-  }).filter(Boolean)
-}
 
 const copyAllToDist = function (distDir) {
   const copyRelativePathToDist = function (relative) {
@@ -126,7 +113,12 @@ const copyAllToDist = function (distDir) {
 
   return fs.ensureDirAsync(distDir)
   .then(() => {
-    return glob('./packages/*')
+    const globs = ['./packages/*', './npm/*']
+    const globOptions = {
+      onlyFiles: false,
+    }
+
+    return Promise.resolve(externalUtils.globby(globs, globOptions))
     .map(copyPackage, { concurrency: 1 })
   }).then(() => {
     console.log('Finished Copying %dms', new Date() - started)
@@ -135,12 +127,59 @@ const copyAllToDist = function (distDir) {
   })
 }
 
-const forceNpmInstall = function (packagePath, packageToInstall) {
-  console.log('Force installing %s', packageToInstall)
-  console.log('in %s', packagePath)
-  la(check.unemptyString(packageToInstall), 'missing package to install')
+// replaces local npm version 0.0.0-development
+// with the path to the package
+// we need to do this instead of just changing the symlink (like we do for require('@packages/...'))
+// so the packages actually get installed to node_modules and work with peer dependencies
+const replaceLocalNpmVersions = function (basePath) {
+  const visited = []
 
-  return yarn(['install', '--force', packageToInstall], packagePath)
+  const updateNpmPackage = function (pkg) {
+    if (!visited.includes(pkg)) {
+      visited.push(pkg)
+
+      return updatePackageJson(`./npm/${pkg}/package.json`)
+    }
+
+    return Promise.resolve()
+  }
+
+  const updatePackageJson = function (pattern) {
+    return Promise.resolve(glob(pattern, { cwd: basePath }))
+    .map((pkgPath) => {
+      const pkgJsonPath = path.join(basePath, pkgPath)
+
+      return fs.readJsonAsync(pkgJsonPath)
+      .then((json) => {
+        const { dependencies } = json
+        let shouldWriteFile = false
+
+        if (dependencies) {
+          return Promise.all(_.map(dependencies, (version, pkg) => {
+            const parsedPkg = /(@cypress\/)(.*)/g.exec(pkg)
+
+            if (parsedPkg && parsedPkg.length === 3 && version === '0.0.0-development') {
+              const pkgName = parsedPkg[2]
+
+              json.dependencies[`@cypress/${pkgName}`] = `file:${path.join(basePath, 'npm', pkgName)}`
+              shouldWriteFile = true
+
+              return updateNpmPackage(pkgName)
+            }
+          }))
+          .then(() => {
+            if (shouldWriteFile) {
+              return fs.writeJsonAsync(pkgJsonPath, json, { spaces: 2 })
+            }
+          })
+        }
+
+        return Promise.resolve()
+      })
+    })
+  }
+
+  return updatePackageJson('./packages/*/package.json')
 }
 
 const removeDevDependencies = function (packageFolder) {
@@ -206,6 +245,9 @@ const npmInstallAll = function (pathToPackages) {
   return retryGlobbing(pathToPackages)
   .tap(printFolders)
   .mapSeries((packageFolder) => {
+    // Copying the yarn.lock from the root for deterministic builds
+    fs.writeFileSync(path.join(packageFolder, 'yarn.lock'), rootYarnLock)
+
     return removeDevDependencies(packageFolder)
     .then(() => {
       return retryNpmInstall(packageFolder)
@@ -217,60 +259,6 @@ const npmInstallAll = function (pathToPackages) {
   })
 }
 
-const removePackageJson = function (filename) {
-  if (filename.endsWith('/package.json')) {
-    return path.dirname(filename)
-  }
-
-  return filename
-}
-
-const ensureFoundSomething = function (files) {
-  if (files.length === 0) {
-    throw new Error('Could not find any files')
-  }
-
-  return files
-}
-
-const symlinkType = function () {
-  if (os.platform() === 'win32') {
-    return 'junction'
-  }
-
-  return 'dir'
-}
-
-const symlinkAll = function (pathToDistPackages, pathTo) {
-  console.log('symlink these packages', pathToDistPackages)
-  la(check.unemptyString(pathToDistPackages),
-    'missing paths to dist packages', pathToDistPackages)
-
-  const symlink = function (pkg) {
-    // console.log(pkg, dist)
-    // strip off the initial './'
-    // ./packages/foo -> node_modules/@packages/foo
-    pkg = removePackageJson(pkg)
-    const dest = pathTo('node_modules', '@packages', path.basename(pkg))
-    const relativeDest = path.relative(`${dest}/..`, pkg)
-
-    const type = symlinkType()
-
-    console.log(relativeDest, 'link ->', dest, 'type', type)
-
-    return fs.ensureSymlinkAsync(relativeDest, dest, symlinkType)
-    .catch((err) => {
-      if (!err.message.includes('EEXIST')) {
-        throw err
-      }
-    })
-  }
-
-  return glob(pathToDistPackages)
-  .then(ensureFoundSomething)
-  .map(symlink)
-}
-
 module.exports = {
   runAllBuild,
 
@@ -278,16 +266,7 @@ module.exports = {
 
   npmInstallAll,
 
-  symlinkAll,
-
   runAllCleanJs,
 
-  forceNpmInstall,
-
-  getPackagesWithScript,
-}
-
-if (!module.parent) {
-  console.log('demo force install')
-  forceNpmInstall('packages/server', '@ffmpeg-installer/win32-x64')
+  replaceLocalNpmVersions,
 }

@@ -5,24 +5,7 @@ const util = require('../util')
 const spawn = require('./spawn')
 const verify = require('../tasks/verify')
 const { exitWithError, errors } = require('../errors')
-
-/**
- * Throws an error with "details" property from
- * "errors" object.
- * @param {Object} details - Error details
- */
-const throwInvalidOptionError = (details) => {
-  if (!details) {
-    details = errors.unknownError
-  }
-
-  // throw this error synchronously, it will be caught later on and
-  // the details will be propagated to the promise chain
-  const err = new Error()
-
-  err.details = details
-  throw err
-}
+const { processTestingType, throwInvalidOptionError } = require('./shared')
 
 /**
  * Typically a user passes a string path to the project.
@@ -66,14 +49,6 @@ const processRunOptions = (options = {}) => {
     args.push('--browser', options.browser)
   }
 
-  if (options.ci) {
-    // push to display the deprecation message
-    args.push('--ci')
-
-    // also automatically record
-    args.push('--record', true)
-  }
-
   if (options.ciBuildId) {
     args.push('--ci-build-id', options.ciBuildId)
   }
@@ -113,7 +88,7 @@ const processRunOptions = (options = {}) => {
   // if key is set use that - else attempt to find it by environment variable
   if (options.key == null) {
     debug('--key is not set, looking up environment variable CYPRESS_RECORD_KEY')
-    options.key = util.getEnv('CYPRESS_RECORD_KEY') || util.getEnv('CYPRESS_CI_KEY')
+    options.key = util.getEnv('CYPRESS_RECORD_KEY')
   }
 
   // if we have a key assume we're in record mode
@@ -139,7 +114,7 @@ const processRunOptions = (options = {}) => {
 
   // if record is defined and we're not
   // already in ci mode, then send it up
-  if (options.record != null && !options.ci) {
+  if (options.record != null) {
     args.push('--record', options.record)
   }
 
@@ -161,6 +136,8 @@ const processRunOptions = (options = {}) => {
   if (options.tag) {
     args.push('--tag', options.tag)
   }
+
+  args.push(...processTestingType(options.testingType))
 
   return args
 }

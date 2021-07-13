@@ -1,3 +1,4 @@
+const _ = require('lodash')
 const path = require('path')
 const check = require('syntax-error')
 const debug = require('debug')('cypress:server:fixture')
@@ -5,7 +6,7 @@ const coffee = require('coffeescript')
 const Promise = require('bluebird')
 const jsonlint = require('jsonlint')
 const errors = require('./errors')
-const fs = require('./util/fs')
+const { fs } = require('./util/fs')
 const glob = require('./util/glob')
 
 const extensions = [
@@ -121,9 +122,9 @@ module.exports = {
       case '.coffee': return this.parseCoffee(p, fixture)
       case '.html': return this.parseHtml(p, fixture)
       case '.png': case '.jpg': case '.jpeg': case '.gif': case '.tif': case '.tiff': case '.zip':
-        return this.parse(p, fixture, options.encoding || 'base64')
+        return this.parse(p, fixture, _.isNull(options.encoding) ? null : (options.encoding || 'base64'))
       default:
-        return this.parse(p, fixture, options.encoding)
+        return this.parse(p, fixture, _.isNull(options.encoding) ? null : options.encoding)
     }
   },
 

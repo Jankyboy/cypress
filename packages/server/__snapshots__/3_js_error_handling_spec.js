@@ -7,14 +7,14 @@ exports['e2e js error handling / fails'] = `
   ┌────────────────────────────────────────────────────────────────────────────────────────────────┐
   │ Cypress:    1.2.3                                                                              │
   │ Browser:    FooBrowser 88                                                                      │
-  │ Specs:      1 found (js_error_handling_failing_spec.coffee)                                    │
-  │ Searched:   cypress/integration/js_error_handling_failing_spec.coffee                          │
+  │ Specs:      1 found (js_error_handling_failing_spec.js)                                        │
+  │ Searched:   cypress/integration/js_error_handling_failing_spec.js                              │
   └────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                     
-  Running:  js_error_handling_failing_spec.coffee                                           (1 of 1)
+  Running:  js_error_handling_failing_spec.js                                               (1 of 1)
 
 
   s1
@@ -86,7 +86,7 @@ https://on.cypress.io/uncaught-exception-from-application
   5) s1
        cross origin script errors
          explains where script errored:
-     CypressError: The following error originated from your application code, not from Cypress.
+     Error: The following error originated from your application code, not from Cypress.
 
   > Script error.
 
@@ -105,10 +105,6 @@ This behavior is configurable, and you can choose to turn this off by listening 
 https://on.cypress.io/uncaught-exception-from-application
 
 https://on.cypress.io/cross-origin-script-error
-      [stack trace lines]
-
-
-
 
   (Results)
 
@@ -121,29 +117,29 @@ https://on.cypress.io/cross-origin-script-error
   │ Screenshots:  5                                                                                │
   │ Video:        true                                                                             │
   │ Duration:     X seconds                                                                        │
-  │ Spec Ran:     js_error_handling_failing_spec.coffee                                            │
+  │ Spec Ran:     js_error_handling_failing_spec.js                                                │
   └────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 
   (Screenshots)
 
-  -  /XXX/XXX/XXX/cypress/screenshots/js_error_handling_failing_spec.coffee/s1 -- wit     (1280x720)
-     hout an afterEach hook -- t1 (failed).png                                                      
-  -  /XXX/XXX/XXX/cypress/screenshots/js_error_handling_failing_spec.coffee/s1 -- wit     (1280x720)
-     hout an afterEach hook -- t2 (failed).png                                                      
-  -  /XXX/XXX/XXX/cypress/screenshots/js_error_handling_failing_spec.coffee/s1 -- wit     (1280x720)
-     h an afterEach hook -- t4 (failed).png                                                         
-  -  /XXX/XXX/XXX/cypress/screenshots/js_error_handling_failing_spec.coffee/s1 -- wit     (1280x720)
-     h an afterEach hook -- t5 (failed).png                                                         
-  -  /XXX/XXX/XXX/cypress/screenshots/js_error_handling_failing_spec.coffee/s1 -- cro     (1280x720)
-     ss origin script errors -- explains where script errored (failed).png                          
+  -  /XXX/XXX/XXX/cypress/screenshots/js_error_handling_failing_spec.js/s1 -- without     (1280x720)
+      an afterEach hook -- t1 (failed).png                                                          
+  -  /XXX/XXX/XXX/cypress/screenshots/js_error_handling_failing_spec.js/s1 -- without     (1280x720)
+      an afterEach hook -- t2 (failed).png                                                          
+  -  /XXX/XXX/XXX/cypress/screenshots/js_error_handling_failing_spec.js/s1 -- with an     (1280x720)
+      afterEach hook -- t4 (failed).png                                                             
+  -  /XXX/XXX/XXX/cypress/screenshots/js_error_handling_failing_spec.js/s1 -- with an     (1280x720)
+      afterEach hook -- t5 (failed).png                                                             
+  -  /XXX/XXX/XXX/cypress/screenshots/js_error_handling_failing_spec.js/s1 -- cross o     (1280x720)
+     rigin script errors -- explains where script errored (failed).png                              
 
 
   (Video)
 
   -  Started processing:  Compressing to 32 CRF                                                     
   -  Finished processing: /XXX/XXX/XXX/cypress/videos/js_error_handling_failing_spec.     (X second)
-                          coffee.mp4                                                                
+                          js.mp4                                                                    
 
 
 ====================================================================================================
@@ -153,8 +149,7 @@ https://on.cypress.io/cross-origin-script-error
 
        Spec                                              Tests  Passing  Failing  Pending  Skipped  
   ┌────────────────────────────────────────────────────────────────────────────────────────────────┐
-  │ ✖  js_error_handling_failing_spec.coff      XX:XX        8        3        5        -        - │
-  │    ee                                                                                          │
+  │ ✖  js_error_handling_failing_spec.js        XX:XX        8        3        5        -        - │
   └────────────────────────────────────────────────────────────────────────────────────────────────┘
     ✖  1 of 1 failed (100%)                     XX:XX        8        3        5        -        -  
 

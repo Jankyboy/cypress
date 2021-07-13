@@ -1,13 +1,12 @@
-const path = require('path')
-
-function dist (...args) {
-  const paths = [__dirname, '..', 'dist'].concat(args)
-
-  return path.join(...paths)
-}
+const { getPathToDist } = require('@packages/resolve-dist')
 
 module.exports = {
-  getPathToDist (...args) {
-    return dist(...args)
+  handle (send) {
+    return (req, res) => {
+      const pathToFile = getPathToDist('static', req.params[0])
+
+      return send(req, pathToFile)
+      .pipe(res)
+    }
   },
 }

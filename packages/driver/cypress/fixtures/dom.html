@@ -405,7 +405,7 @@
       <table id="table">
         <thead>
           header
-        </thead
+        </thead>
         <tbody>
           <tr>
             <td>cell</td>
@@ -450,6 +450,7 @@
         <option value="2001">2001: A Space Odyssey</option>
         <option value="co">Clockwork Orange</option>
         <option value="twbb">There Will Be Blood</option>
+        <option value="gone&nbsp;with&nbsp;the&nbsp;wind">Gone with the Wind</option>
       </select>
 
       <select name="disabled" disabled>
@@ -457,11 +458,18 @@
         <option value="bar">bar</option>
       </select>
 
+      <fieldset disabled>
+        <select name="fielset-disabled">
+          <option value="foo">foo</option>
+          <option value="bar">bar</option>
+        </select>
+      </fieldset>
+
       <select name="optgroup-disabled">
         <optgroup label="foobar" disabled>
           <option value="foo">foo</option>
           <option value="bar">bar</option>
-        <optgroup>
+        </optgroup>
       </select>
 
       <select name="opt-disabled">
@@ -608,6 +616,14 @@
         </a>
       </div>
 
+      <span id="opacity-0" style="opacity: 0;">opacity 0</span>
+      <input type="checkbox" style="opacity: 0;" name="opacity" value="val" />
+      <div style="opacity: 0;">
+        <span id="opacity-0-parent">parent opacity 0</span>
+      </div>
+      <div style="height:25px; width:25px; overflow: hidden;">
+        <span id="opacity-0-hidden" style="opacity: 0; margin-left: 30px;">opacity 0</span>
+      </div>
 
       <div id="massively-long-div" style="height: 500px; width: 200px; background-color: gray;"></div>
       <div id="form-header-region">
@@ -641,6 +657,10 @@
       <div>
         iframe:<br>
         <iframe id="iframe" src="/fixtures/generic.html"></iframe>
+      </div>
+      <div id="does-not-wrap-input">Text</div>
+      <div id="input-wrap">
+        <input style="width:100%" />
       </div>
       <div>
         Cross domain iframe:<br>

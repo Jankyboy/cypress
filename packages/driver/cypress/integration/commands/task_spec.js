@@ -38,6 +38,10 @@ describe('src/cy/commands/task', () => {
       cy.task('return:arg', 'works').should('eq', 'works')
     })
 
+    it('returns the default value when no argument is given', () => {
+      cy.task('arg:is:undefined').should('eq', 'arg was undefined')
+    })
+
     describe('.log', () => {
       beforeEach(function () {
         this.logs = []
@@ -138,7 +142,7 @@ describe('src/cy/commands/task', () => {
           expect(lastLog.get('error')).to.eq(err)
           expect(lastLog.get('state')).to.eq('failed')
           expect(err.message).to.eq('`cy.task()` must be passed a non-empty string as its 1st argument. You passed: ``.')
-          expect(err.docsUrl).to.eq('https://on.cypress.io/task')
+          expect(err.docsUrl).to.eq('https://on.cypress.io/api/task')
 
           done()
         })
@@ -154,7 +158,7 @@ describe('src/cy/commands/task', () => {
           expect(lastLog.get('error')).to.eq(err)
           expect(lastLog.get('state')).to.eq('failed')
           expect(err.message).to.eq('`cy.task()` must be passed a non-empty string as its 1st argument. You passed: `3`.')
-          expect(err.docsUrl).to.eq('https://on.cypress.io/task')
+          expect(err.docsUrl).to.eq('https://on.cypress.io/api/task')
 
           done()
         })
@@ -170,7 +174,7 @@ describe('src/cy/commands/task', () => {
           expect(lastLog.get('error')).to.eq(err)
           expect(lastLog.get('state')).to.eq('failed')
           expect(err.message).to.eq('`cy.task()` must be passed a non-empty string as its 1st argument. You passed: ``.')
-          expect(err.docsUrl).to.eq('https://on.cypress.io/task')
+          expect(err.docsUrl).to.eq('https://on.cypress.io/api/task')
 
           done()
         })
@@ -205,7 +209,7 @@ describe('src/cy/commands/task', () => {
           expect(lastLog.get('error')).to.eq(err)
           expect(lastLog.get('state')).to.eq('failed')
 
-          expect(err.message).to.eq(`\`cy.task('bar')\` failed with the following error:\n\nThe task 'bar' was not handled in the plugins file. The following tasks are registered: return:arg, wait, create:long:file\n\nFix this in your plugins file here:\n${Cypress.config('pluginsFile')}\n\nhttps://on.cypress.io/api/task`)
+          expect(err.message).to.eq(`\`cy.task('bar')\` failed with the following error:\n\nThe task 'bar' was not handled in the plugins file. The following tasks are registered: return:arg, arg:is:undefined, wait, create:long:file\n\nFix this in your plugins file here:\n${Cypress.config('pluginsFile')}`)
 
           done()
         })
@@ -223,7 +227,7 @@ describe('src/cy/commands/task', () => {
           expect(lastLog.get('error')).to.eq(err)
           expect(lastLog.get('state')).to.eq('failed')
           expect(err.message).to.eq('`cy.task(\'foo\')` timed out after waiting `50ms`.')
-          expect(err.docsUrl).to.eq('https://on.cypress.io/task')
+          expect(err.docsUrl).to.eq('https://on.cypress.io/api/task')
 
           done()
         })
@@ -256,7 +260,7 @@ describe('src/cy/commands/task', () => {
 
         cy.on('fail', (err) => {
           expect(err.message).to.include('`cy.task(\'wait\')` timed out after waiting `100ms`.')
-          expect(err.docsUrl).to.eq('https://on.cypress.io/task')
+          expect(err.docsUrl).to.eq('https://on.cypress.io/api/task')
 
           done()
         })
@@ -267,7 +271,7 @@ describe('src/cy/commands/task', () => {
       it('can really time out', (done) => {
         cy.on('fail', (err) => {
           expect(err.message).to.include('`cy.task(\'wait\')` timed out after waiting `100ms`.')
-          expect(err.docsUrl).to.eq('https://on.cypress.io/task')
+          expect(err.docsUrl).to.eq('https://on.cypress.io/api/task')
 
           done()
         })

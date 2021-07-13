@@ -4,6 +4,7 @@ const path = require('path')
 const os = require('os')
 const snapshot = require('snap-shot-it')
 const stripAnsi = require('strip-ansi')
+const minimist = require('minimist')
 const argsUtil = require(`${root}lib/util/args`)
 const getWindowsProxyUtil = require(`${root}lib/util/get-windows-proxy`)
 
@@ -14,6 +15,43 @@ describe('lib/util/args', () => {
     this.setup = (...args) => {
       return argsUtil.toObject(args)
     }
+  })
+
+  context('minimist behavior', () => {
+    it('casts numbers by default', () => {
+      const options = minimist(['--ci-build-id', '1e100'])
+
+      expect(options).to.deep.equal({
+        _: [],
+        'ci-build-id': 1e+100,
+      })
+    })
+
+    it('does not cast strings if specified', () => {
+      const options = minimist(['--ci-build-id', '1e100'], {
+        string: ['ci-build-id'],
+      })
+
+      expect(options).to.deep.equal({
+        _: [],
+        'ci-build-id': '1e100',
+      })
+    })
+
+    it('does not cast alias strings if specified', () => {
+      const options = minimist(['--ciBuildId', '1e100'], {
+        string: ['ci-build-id'],
+        alias: {
+          'ci-build-id': 'ciBuildId',
+        },
+      })
+
+      expect(options).to.deep.equal({
+        _: [],
+        'ci-build-id': '1e100',
+        ciBuildId: '1e100',
+      })
+    })
   })
 
   context('--smoke-test', () => {
@@ -327,7 +365,7 @@ describe('lib/util/args', () => {
       this.obj = { config: { foo: 'bar' }, project: 'foo/bar' }
     })
 
-    it('rejects values which have an cooresponding underscore\'d key', function () {
+    it('rejects values which have an corresponding underscore\'d key', function () {
       expect(argsUtil.toArray(this.obj)).to.deep.eq([
         `--config=${JSON.stringify({ foo: 'bar' })}`,
         '--project=foo/bar',
@@ -366,7 +404,6 @@ describe('lib/util/args', () => {
       }
 
       this.obj = this.setup(
-        '--get-key',
         '--env=foo=bar,baz=quux,bar=foo=quz',
         '--config',
         `requestTimeout=1234,blockHosts=${s(this.blockHosts)},hosts=${s(this.hosts)}`,
@@ -387,9 +424,9 @@ describe('lib/util/args', () => {
         cwd,
         _: [],
         config: this.config,
-        getKey: true,
         invokedFromCli: false,
         spec: this.specs,
+        testingType: 'e2e',
       })
     })
 
@@ -409,17 +446,30 @@ describe('lib/util/args', () => {
       expect(args).to.deep.eq([
         `--config=${mergedConfig}`,
         `--cwd=${cwd}`,
-        '--getKey=true',
         `--spec=${JSON.stringify(this.specs)}`,
+        '--testingType=e2e',
       ])
 
       expect(argsUtil.toObject(args)).to.deep.eq({
         cwd,
         _: [],
-        getKey: true,
         invokedFromCli: true,
         config: this.config,
         spec: this.specs,
+        testingType: 'e2e',
+      })
+    })
+
+    it('does not coerce --ci-build-id', function () {
+      const result = argsUtil.toObject(['--ci-build-id', '1e100'])
+
+      expect(result).to.deep.equal({
+        ciBuildId: '1e100',
+        cwd,
+        _: [],
+        invokedFromCli: false,
+        testingType: 'e2e',
+        config: {},
       })
     })
   })
@@ -446,6 +496,7 @@ describe('lib/util/args', () => {
         appPath: '/Applications/Cypress.app',
         execPath: '/Applications/Cypress.app',
         invokedFromCli: false,
+        testingType: 'e2e',
         updating: true,
       })
     })
@@ -471,6 +522,7 @@ describe('lib/util/args', () => {
         appPath: 'a',
         execPath: 'e',
         invokedFromCli: false,
+        testingType: 'e2e',
         updating: true,
       })
     })

@@ -1,15 +1,16 @@
 import Promise from 'bluebird'
 import Debug from 'debug'
 import _ from 'lodash'
-import moment from 'moment'
+import dayjs from 'dayjs'
 import $errUtils from '../cypress/error_utils'
 import { USKeyboard } from '../cypress/UsKeyboardLayout'
 import * as $dom from '../dom'
 import * as $document from '../dom/document'
 import * as $elements from '../dom/elements'
 // eslint-disable-next-line no-duplicate-imports
-import { HTMLTextLikeElement, HTMLTextLikeInputElement } from '../dom/elements'
+import { HTMLTextLikeElement } from '../dom/elements'
 import * as $selection from '../dom/selection'
+import $utils from '../cypress/utils'
 import $window from '../dom/window'
 
 const debug = Debug('cypress:driver:keyboard')
@@ -42,9 +43,12 @@ type SimulatedDefault = (
   options: typeOptions
 ) => void
 
+type KeyInfo = KeyDetails | ShortcutDetails
+
 interface KeyDetails {
+  type: 'key'
   key: string
-  text: string
+  text: string | null
   code: string
   keyCode: number
   location: number
@@ -57,6 +61,13 @@ interface KeyDetails {
   events: {
     [key in KeyEventType]?: boolean;
   }
+}
+
+interface ShortcutDetails {
+  type: 'shortcut'
+  modifiers: KeyDetails[]
+  key: KeyDetails
+  originalSequence: string
 }
 
 const dateRe = /^\d{4}-\d{2}-\d{2}/
@@ -101,6 +112,7 @@ export type KeyEventType =
   | 'keypress'
   | 'input'
   | 'textInput'
+  | 'beforeinput'
 
 const toModifiersEventOptions = (modifiers: KeyboardModifiers) => {
   return {
@@ -137,11 +149,15 @@ const modifiersToString = (modifiers: KeyboardModifiers) => {
   })).join(', ')
 }
 
-const joinKeyArrayToString = (keyArr: KeyDetails[]) => {
-  return _.map(keyArr, (keyDetails) => {
-    if (keyDetails.text) return keyDetails.key
+const joinKeyArrayToString = (keyArr: KeyInfo[]) => {
+  return _.map(keyArr, (key) => {
+    if (key.type === 'key') {
+      if (key.text) return key.key
 
-    return `{${keyDetails.key}}`
+      return `{${key.key}}`
+    }
+
+    return `{${key.originalSequence}}`
   }).join('')
 }
 
@@ -149,8 +165,8 @@ type modifierKeyDetails = KeyDetails & {
   key: keyof typeof keyToModifierMap
 }
 
-const isModifier = (details: KeyDetails): details is modifierKeyDetails => {
-  return !!keyToModifierMap[details.key]
+const isModifier = (details: KeyInfo): details is modifierKeyDetails => {
+  return details.type === 'key' && !!keyToModifierMap[details.key]
 }
 
 const getFormattedKeyString = (details: KeyDetails) => {
@@ -169,7 +185,7 @@ const getFormattedKeyString = (details: KeyDetails) => {
   return details.originalSequence
 }
 
-const countNumIndividualKeyStrokes = (keys: KeyDetails[]) => {
+const countNumIndividualKeyStrokes = (keys: KeyInfo[]) => {
   return _.countBy(keys, isModifier)['false']
 }
 
@@ -187,7 +203,7 @@ const findKeyDetailsOrLowercase = (key: string): KeyDetailsPartial => {
 const getTextLength = (str) => _.toArray(str).length
 
 const getKeyDetails = (onKeyNotFound) => {
-  return (key: string): KeyDetails => {
+  return (key: string): KeyDetails | ShortcutDetails => {
     let foundKey: KeyDetailsPartial
 
     if (getTextLength(key) === 1) {
@@ -198,19 +214,76 @@ const getKeyDetails = (onKeyNotFound) => {
 
     if (foundKey) {
       const details = _.defaults({}, foundKey, {
+        type: 'key',
         key: '',
         keyCode: 0,
         code: '',
-        text: '',
+        text: null,
         location: 0,
         events: {},
-      })
+      }) as KeyDetails
 
       if (getTextLength(details.key) === 1) {
         details.text = details.key
       }
 
+      details.type = 'key'
       details.originalSequence = key
+
+      return details
+    }
+
+    if (key.includes('+')) {
+      if (key.endsWith('++')) {
+        key = key.replace('++', '+plus')
+      }
+
+      const keys = key.split('+')
+      let lastKey = _.last(keys)
+
+      if (lastKey === 'plus') {
+        keys[keys.length - 1] = '+'
+        lastKey = '+'
+      }
+
+      if (!lastKey) {
+        return onKeyNotFound(key, _.keys(getKeymap()).join(', '))
+      }
+
+      const keyWithModifiers = getKeyDetails(onKeyNotFound)(lastKey) as KeyDetails
+
+      let hasModifierBesidesShift = false
+
+      const modifiers = keys.slice(0, -1)
+      .map((m) => {
+        if (!Object.keys(modifierChars).includes(m)) {
+          $errUtils.throwErrByPath('type.not_a_modifier', {
+            args: {
+              key: m,
+            },
+          })
+        }
+
+        if (m !== 'shift') {
+          hasModifierBesidesShift = true
+        }
+
+        return getKeyDetails(onKeyNotFound)(m)
+      }) as KeyDetails[]
+
+      const details: ShortcutDetails = {
+        type: 'shortcut',
+        modifiers,
+        key: keyWithModifiers,
+        originalSequence: key,
+      }
+
+      // if we are going to type {ctrl+b}, the 'b' shouldn't be input as text
+      // normally we don't bypass text input but for shortcuts it's definitely what the user wants
+      // since the modifiers only apply to this single key.
+      if (hasModifierBesidesShift) {
+        details.key.text = null
+      }
 
       return details
     }
@@ -246,6 +319,10 @@ const shouldUpdateValue = (el: HTMLElement, key: KeyDetails, options: typeOption
 
   if ($elements.isInput(el) || $elements.isTextarea(el)) {
     if ($elements.isReadOnlyInputOrTextarea(el) && !options.force) {
+      return false
+    }
+
+    if ($elements.isButtonLike(el) && !options.force) {
       return false
     }
 
@@ -310,7 +387,7 @@ const getKeymap = () => {
 }
 const validateTyping = (
   el: HTMLElement,
-  keys: KeyDetails[],
+  keys: KeyInfo[],
   currentIndex: number,
   onFail: Function,
   skipCheckUntilIndex: number | undefined,
@@ -401,10 +478,15 @@ const validateTyping = (
   if (isDate) {
     dateChars = dateRe.exec(chars)
 
+    const dateExists = (date) => {
+      // dayjs rounds up dates that don't exist to valid dates
+      return dayjs(date, 'YYYY-MM-DD').format('YYYY-MM-DD') === date
+    }
+
     if (
       _.isString(chars) &&
       dateChars &&
-      moment(dateChars[0]).isValid()
+      dateExists(dateChars[0])
     ) {
       skipCheckUntilIndex = _getEndIndex(chars, dateChars[0])
 
@@ -607,8 +689,10 @@ export interface typeOptions {
 }
 
 export class Keyboard {
-  constructor (private state: State) {
-    null
+  private SUPPORTS_BEFOREINPUT_EVENT
+
+  constructor (private Cypress, private state: State) {
+    this.SUPPORTS_BEFOREINPUT_EVENT = Cypress.isBrowser({ family: 'chromium' })
   }
 
   type (opts: typeOptions) {
@@ -635,9 +719,6 @@ export class Keyboard {
     }
 
     debug('type:', options.chars, options)
-
-    const el = options.$el.get(0)
-    const doc = $document.getDocumentFromElement(el)
 
     let keys: string[]
 
@@ -667,25 +748,21 @@ export class Keyboard {
 
     options.onBeforeType(numKeys)
 
-    const getActiveEl = (doc: Document) => {
-      if (options.force) {
-        return options.$el.get(0)
-      }
-
-      const activeEl = $elements.getActiveElByDocument(options.$el) || doc.body
-
-      return activeEl
-    }
-
     let _skipCheckUntilIndex: number | undefined = 0
 
     const typeKeyFns = _.map(
       keyDetailsArr,
-      (key: KeyDetails, currentKeyIndex: number) => {
+      (key: KeyInfo, currentKeyIndex: number) => {
         return () => {
-          debug('typing key:', key.key)
+          const activeEl = this.getActiveEl(options)
 
-          const activeEl = getActiveEl(doc)
+          if (key.type === 'shortcut') {
+            this.simulateShortcut(activeEl, key, options)
+
+            return null
+          }
+
+          debug('typing key:', key.key)
 
           _skipCheckUntilIndex = _skipCheckUntilIndex && _skipCheckUntilIndex - 1
 
@@ -714,21 +791,27 @@ export class Keyboard {
                 // singleValueChange inputs must have their value set once at the end
                 // performing the simulatedDefault for a key would try to insert text on each character
                 // we still send all the events as normal, however
-                key.simulatedDefault = _.noop
+                if (key.type === 'key') {
+                  key.simulatedDefault = _.noop
+                }
               })
 
-              _.last(keysToType)!.simulatedDefault = () => {
-                options.onValueChange(originalText, activeEl)
+              const lastKeyToType = _.last(keysToType)!
 
-                const valToSet = isClearChars ? '' : joinKeyArrayToString(keysToType)
+              if (lastKeyToType.type === 'key') {
+                lastKeyToType.simulatedDefault = () => {
+                  options.onValueChange(originalText, activeEl)
 
-                debug('setting element value', valToSet, activeEl)
+                  const valToSet = isClearChars ? '' : joinKeyArrayToString(keysToType)
 
-                return $elements.setNativeProp(
-                  activeEl as $elements.HTMLTextLikeInputElement,
-                  'value',
-                  valToSet,
-                )
+                  debug('setting element value', valToSet, activeEl)
+
+                  return $elements.setNativeProp(
+                    activeEl as $elements.HTMLTextLikeInputElement,
+                    'value',
+                    valToSet,
+                  )
+                }
               }
             }
           } else {
@@ -758,16 +841,21 @@ export class Keyboard {
 
     return Promise
     .each(typeKeyFns, (fn) => {
+      if (options.delay) {
+        return Promise
+        .try(fn)
+        .delay(options.delay)
+      }
+
       return Promise
       .try(fn)
-      .delay(options.delay)
     })
     .then(() => {
       if (options.release !== false) {
         return Promise.map(modifierKeys, (key) => {
           options.id = _.uniqueId('char')
 
-          return this.simulatedKeyup(getActiveEl(doc), key, options)
+          return this.simulatedKeyup(this.getActiveEl(options), key, options)
         })
       }
 
@@ -794,13 +882,14 @@ export class Keyboard {
     let charCode: number | undefined
     let keyCode: number | undefined
     let which: number | undefined
-    let data: string | undefined
+    let data: Nullable<string> | undefined
     let location: number | undefined = keyDetails.location || 0
     let key: string | undefined
     let code: string | undefined = keyDetails.code
     let eventConstructor = 'KeyboardEvent'
     let cancelable = true
     let addModifiers = true
+    let inputType: string | undefined
 
     switch (eventType) {
       case 'keydown':
@@ -813,7 +902,7 @@ export class Keyboard {
       }
 
       case 'keypress': {
-        const charCodeAt = keyDetails.text.charCodeAt(0)
+        const charCodeAt = text!.charCodeAt(0)
 
         charCode = charCodeAt
         keyCode = charCodeAt
@@ -829,13 +918,23 @@ export class Keyboard {
         keyCode = 0
         which = 0
         location = undefined
-        data = text
+        data = text === '\r' ? '↵' : text
+        break
+
+      case 'beforeinput':
+        eventConstructor = 'InputEvent'
+        addModifiers = false
+        data = text === '\r' ? null : text
+        code = undefined
+        location = undefined
+        cancelable = true
+        inputType = this.getInputType(keyDetails.code, $elements.isContentEditable(el))
         break
 
       case 'input':
         eventConstructor = 'InputEvent'
         addModifiers = false
-        data = text
+        data = text === '\r' ? null : text
         location = undefined
         cancelable = false
         break
@@ -875,6 +974,7 @@ export class Keyboard {
           data,
           detail: 0,
           view: win,
+          inputType,
         },
         _.isUndefined,
       ),
@@ -920,6 +1020,56 @@ export class Keyboard {
     options.onEvent(options.id, formattedKeyString, event, dispatched)
 
     return dispatched
+  }
+
+  getInputType (code, isContentEditable) {
+  // TODO: we DO set inputType for the following but DO NOT perform the correct default action
+  // e.g: we don't delete the entire word with `{ctrl}{del}` but send correct inputType:
+  // - deleteWordForward
+  // - deleteWordBackward
+  // - deleteHardLineForward
+  // - deleteHardLineBackward
+  //
+  // TODO: we do NOT set the following input types at all, since we don't yet support copy/paste actions
+  // e.g. we dont actually paste clipboard contents when typing '{ctrl}v':
+  // - insertFromPaste
+  // - deleteByCut
+  // - historyUndo
+  // - historyRedo
+  //
+  // @see https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/beforeinput_event
+
+    const { shift, ctrl } = this.getActiveModifiers()
+
+    if (code === 'Enter') {
+      return isContentEditable ? 'insertParagraph' : 'insertLineBreak'
+    }
+
+    if (code === 'Backspace') {
+      if (shift && ctrl) {
+        return 'deleteHardLineBackward'
+      }
+
+      if (ctrl) {
+        return 'deleteWordBackward'
+      }
+
+      return 'deleteContentBackward'
+    }
+
+    if (code === 'Delete') {
+      if (shift && ctrl) {
+        return 'deleteHardLineForward'
+      }
+
+      if (ctrl) {
+        return 'deleteWordForward'
+      }
+
+      return 'deleteContentForward'
+    }
+
+    return 'insertText'
   }
 
   getActiveModifiers () {
@@ -989,6 +1139,7 @@ export class Keyboard {
       key.events.textInput = false
       if (key.key !== 'Backspace' && key.key !== 'Delete') {
         key.events.input = false
+        key.events.beforeinput = false
       }
     }
 
@@ -1023,10 +1174,16 @@ export class Keyboard {
         this.fireSimulatedEvent(elToType, 'keypress', key, options)
       ) {
         if (
-          shouldIgnoreEvent('textInput', key.events) ||
-          this.fireSimulatedEvent(elToType, 'textInput', key, options)
+          !this.SUPPORTS_BEFOREINPUT_EVENT ||
+          shouldIgnoreEvent('beforeinput', key.events) ||
+          this.fireSimulatedEvent(elToType, 'beforeinput', key, options)
         ) {
-          return this.performSimulatedDefault(elToType, key, options)
+          if (
+            shouldIgnoreEvent('textInput', key.events) ||
+          this.fireSimulatedEvent(elToType, 'textInput', key, options)
+          ) {
+            return this.performSimulatedDefault(elToType, key, options)
+          }
         }
       }
     }
@@ -1052,6 +1209,25 @@ export class Keyboard {
     const elToKeyup = this.getActiveEl(options)
 
     this.simulatedKeyup(elToKeyup, key, options)
+  }
+
+  simulateShortcut (el: HTMLElement, key: ShortcutDetails, options) {
+    key.modifiers.forEach((key) => {
+      this.simulatedKeydown(el, key, options)
+    })
+
+    this.simulatedKeydown(el, key.key, options)
+    this.simulatedKeyup(el, key.key, options)
+
+    options.id = _.uniqueId('char')
+
+    const elToKeyup = this.getActiveEl(options)
+
+    key.modifiers.reverse().forEach((key) => {
+      delete key.events.keyup
+      options.id = _.uniqueId('char')
+      this.simulatedKeyup(elToKeyup, key, options)
+    })
   }
 
   simulatedKeyup (el: HTMLElement, _key: KeyDetails, options: typeOptions) {
@@ -1103,7 +1279,13 @@ export class Keyboard {
 
     const doc = $document.getDocumentFromElement(el)
 
-    return $elements.getActiveElByDocument(options.$el) || doc.body
+    // If focus has changed to a new element, use the new element
+    // however, if the new element is the body (aka the current element was blurred) continue with the same element.
+    // this is to prevent strange edge cases where an element loses focus due to framework rerender or page load.
+    // https://github.com/cypress-io/cypress/issues/5480
+    options.targetEl = $elements.getActiveElByDocument(options.$el) || options.targetEl || doc.body
+
+    return options.targetEl
   }
 
   performSimulatedDefault (el: HTMLElement, key: KeyDetails, options: any) {
@@ -1135,14 +1317,60 @@ export class Keyboard {
   }
 }
 
-const create = (state) => {
-  return new Keyboard(state)
+const create = (Cypress, state) => {
+  return new Keyboard(Cypress, state)
+}
+
+let _defaults
+
+const reset = () => {
+  _defaults = {
+    keystrokeDelay: 10,
+  }
+}
+
+reset()
+
+const getConfig = () => {
+  return _.clone(_defaults)
+}
+
+const defaults = (props: Partial<Cypress.KeyboardDefaultsOptions>) => {
+  if (!_.isPlainObject(props)) {
+    $errUtils.throwErrByPath('keyboard.invalid_arg', {
+      args: { arg: $utils.stringify(props) },
+    })
+  }
+
+  if (!('keystrokeDelay' in props)) {
+    return getConfig()
+  }
+
+  if (!_.isNumber(props.keystrokeDelay) || props.keystrokeDelay! < 0) {
+    $errUtils.throwErrByPath('keyboard.invalid_delay', {
+      args: {
+        cmd: 'Cypress.Keyboard.defaults',
+        docsPath: 'keyboard-api',
+        option: 'keystrokeDelay',
+        delay: $utils.stringify(props.keystrokeDelay),
+      },
+    })
+  }
+
+  _.extend(_defaults, {
+    keystrokeDelay: props.keystrokeDelay,
+  })
+
+  return getConfig()
 }
 
 export {
   create,
+  defaults,
+  getConfig,
   getKeymap,
   modifiersToString,
+  reset,
   toModifiersEventOptions,
   fromModifierEventOptions,
 }

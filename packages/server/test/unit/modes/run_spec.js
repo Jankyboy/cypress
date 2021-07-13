@@ -6,10 +6,10 @@ const stripAnsi = require('strip-ansi')
 const snapshot = require('snap-shot-it')
 const R = require('ramda')
 const pkg = require('@packages/root')
+const { fs } = require(`${root}../lib/util/fs`)
 const user = require(`${root}../lib/user`)
 const errors = require(`${root}../lib/errors`)
-const config = require(`${root}../lib/config`)
-const Project = require(`${root}../lib/project`)
+const ProjectBase = require(`${root}../lib/project-base`).ProjectBase
 const browsers = require(`${root}../lib/browsers`)
 const Reporter = require(`${root}../lib/reporter`)
 const runMode = require(`${root}../lib/modes/run`)
@@ -20,10 +20,11 @@ const random = require(`${root}../lib/util/random`)
 const system = require(`${root}../lib/util/system`)
 const specsUtil = require(`${root}../lib/util/specs`)
 const { experimental } = require(`${root}../lib/experiments`)
+const ProjectStatic = require(`${root}../lib/project_static`)
 
 describe('lib/modes/run', () => {
   beforeEach(function () {
-    this.projectInstance = new Project('/_test-output/path/to/project')
+    this.projectInstance = new ProjectBase({ projectRoot: '/_test-output/path/to/project-e2e', projectType: 'e2e' })
   })
 
   context('.getProjectId', () => {
@@ -99,9 +100,9 @@ describe('lib/modes/run', () => {
     it('sets width and height', () => {
       const props = runMode.getElectronProps()
 
-      expect(props.width).to.eq(1280)
+      expect(props.width).to.eq(1920)
 
-      expect(props.height).to.eq(720)
+      expect(props.height).to.eq(1080)
     })
 
     it('sets show to boolean', () => {
@@ -274,6 +275,7 @@ describe('lib/modes/run', () => {
       .then(() => {
         expect(openProject.closeBrowser).to.be.calledThrice
         expect(runMode.launchBrowser).to.be.calledThrice
+        expect(runMode.launchBrowser.firstCall.args[0]).not.property('writeVideoFrame')
         expect(errors.warning).to.be.calledWith('TESTS_DID_NOT_START_RETRYING', 'Retrying...')
         expect(errors.warning).to.be.calledWith('TESTS_DID_NOT_START_RETRYING', 'Retrying again...')
         expect(errors.get).to.be.calledWith('TESTS_DID_NOT_START_FAILED')
@@ -350,9 +352,22 @@ describe('lib/modes/run', () => {
 
   context('.waitForTestsToFinishRunning', () => {
     beforeEach(function () {
+      sinon.stub(fs, 'pathExists').resolves(true)
       sinon.stub(this.projectInstance, 'getConfig').resolves({})
       sinon.spy(runMode, 'getVideoRecordingDelay')
       sinon.spy(errors, 'warning')
+
+      this.setupProjectEnd = (results) => {
+        results = results || {
+          stats: {
+            failures: 0,
+          },
+        }
+
+        process.nextTick(() => {
+          this.projectInstance.emit('end', results)
+        })
+      }
     })
 
     it('end event resolves with obj, displays stats, displays screenshots, sets video timestamps', function () {
@@ -376,9 +391,7 @@ describe('lib/modes/run', () => {
       sinon.spy(runMode, 'displayScreenshots')
       sinon.spy(Promise.prototype, 'delay')
 
-      process.nextTick(() => {
-        return this.projectInstance.emit('end', results)
-      })
+      this.setupProjectEnd(results)
 
       return runMode.waitForTestsToFinishRunning({
         project: this.projectInstance,
@@ -494,13 +507,7 @@ describe('lib/modes/run', () => {
     })
 
     it('logs warning and resolves on failed video end', async function () {
-      process.nextTick(() => {
-        return this.projectInstance.emit('end', {
-          stats: {
-            failures: 0,
-          },
-        })
-      })
+      this.setupProjectEnd()
 
       sinon.spy(videoCapture, 'process')
       const endVideoCapture = sinon.stub().rejects()
@@ -521,13 +528,7 @@ describe('lib/modes/run', () => {
     })
 
     it('logs warning and resolves on failed video compression', async function () {
-      process.nextTick(() => {
-        return this.projectInstance.emit('end', {
-          stats: {
-            failures: 0,
-          },
-        })
-      })
+      this.setupProjectEnd()
 
       const endVideoCapture = sinon.stub().resolves()
 
@@ -546,14 +547,8 @@ describe('lib/modes/run', () => {
       expect(errors.warning).to.be.calledWith('VIDEO_POST_PROCESSING_FAILED')
     })
 
-    it('should not upload video when videoUploadOnPasses is false and no failures', function () {
-      process.nextTick(() => {
-        return this.projectInstance.emit('end', {
-          stats: {
-            failures: 0,
-          },
-        })
-      })
+    it('does not upload video when videoUploadOnPasses is false and no failures', function () {
+      this.setupProjectEnd()
 
       sinon.spy(runMode, 'postProcessRecording')
       sinon.spy(videoCapture, 'process')
@@ -568,7 +563,7 @@ describe('lib/modes/run', () => {
         gui: false,
         endVideoCapture,
       })
-      .then((obj) => {
+      .then(() => {
         expect(runMode.postProcessRecording).to.be.calledWith('foo.mp4', 'foo-compressed.mp4', 32, false)
 
         expect(videoCapture.process).not.to.be.called
@@ -583,6 +578,42 @@ describe('lib/modes/run', () => {
       })
       .then(() => {
         expect(runMode.getVideoRecordingDelay).to.have.returned(0)
+      })
+    })
+
+    describe('when video is deleted in after:spec event', function () {
+      beforeEach(function () {
+        this.setupProjectEnd()
+        sinon.spy(runMode, 'postProcessRecording')
+        sinon.spy(videoCapture, 'process')
+
+        fs.pathExists.resolves(false)
+      })
+
+      it('does not process or upload video', function () {
+        return runMode.waitForTestsToFinishRunning({
+          project: this.projectInstance,
+          startedVideoCapture: new Date(),
+          videoName: 'foo.mp4',
+          endVideoCapture: sinon.stub().resolves(),
+        })
+        .then((results) => {
+          expect(runMode.postProcessRecording).not.to.be.called
+          expect(videoCapture.process).not.to.be.called
+          expect(results.shouldUploadVideo).to.be.false
+        })
+      })
+
+      it('nulls out video value from results', function () {
+        return runMode.waitForTestsToFinishRunning({
+          project: this.projectInstance,
+          startedVideoCapture: new Date(),
+          videoName: 'foo.mp4',
+          endVideoCapture: sinon.stub().resolves(),
+        })
+        .then((results) => {
+          expect(results.video).to.be.null
+        })
       })
     })
   })
@@ -615,9 +646,21 @@ describe('lib/modes/run', () => {
 
   context('.run browser vs video recording', () => {
     beforeEach(function () {
+      const config = {
+        proxyUrl: 'http://localhost:12345',
+        video: true,
+        videosFolder: 'videos',
+        integrationFolder: '/path/to/integrationFolder',
+        resolved: {
+          integrationFolder: {
+            integrationFolder: { value: '/path/to/integrationFolder', from: 'config' },
+          },
+        },
+      }
+
       sinon.stub(electron.app, 'on').withArgs('ready').yieldsAsync()
       sinon.stub(user, 'ensureAuthToken')
-      sinon.stub(Project, 'ensureExists').resolves()
+      sinon.stub(ProjectStatic, 'ensureExists').resolves()
       sinon.stub(random, 'id').returns(1234)
       sinon.stub(openProject, 'create').resolves(openProject)
       sinon.stub(runMode, 'waitForSocketConnection').resolves()
@@ -629,14 +672,9 @@ describe('lib/modes/run', () => {
       sinon.spy(runMode, 'waitForBrowserToConnect')
       sinon.stub(videoCapture, 'start').resolves()
       sinon.stub(openProject, 'launch').resolves()
+      this.projectInstance.__setConfig(config)
       sinon.stub(openProject, 'getProject').resolves(this.projectInstance)
       sinon.spy(errors, 'warning')
-      sinon.stub(config, 'get').resolves({
-        proxyUrl: 'http://localhost:12345',
-        video: true,
-        videosFolder: 'videos',
-        integrationFolder: '/path/to/integrationFolder',
-      })
 
       sinon.stub(specsUtil, 'find').resolves([
         {
@@ -690,7 +728,7 @@ describe('lib/modes/run', () => {
 
       sinon.stub(electron.app, 'on').withArgs('ready').yieldsAsync()
       sinon.stub(user, 'ensureAuthToken')
-      sinon.stub(Project, 'ensureExists').resolves()
+      sinon.stub(ProjectStatic, 'ensureExists').resolves()
       sinon.stub(random, 'id').returns(1234)
       sinon.stub(openProject, 'create').resolves(openProject)
       sinon.stub(system, 'info').resolves({ osName: 'osFoo', osVersion: 'fooVersion' })

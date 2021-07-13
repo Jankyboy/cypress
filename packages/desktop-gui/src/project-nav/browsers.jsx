@@ -35,7 +35,7 @@ export default class Browsers extends Component {
       return (
         <li className='close-browser'>
           <button className='btn btn-xs btn-danger' onClick={this._closeBrowser.bind(this)}>
-            <i className='fas fa-fw fa-times'></i>
+            <i className='fas fa-fw fa-times' />
             Stop
           </button>
         </li>
@@ -74,7 +74,6 @@ export default class Browsers extends Component {
         {prefixText}{' '}
         {browser.displayName}{' '}
         {browser.majorVersion}
-        {browser.family === 'firefox' && <span className='browser-beta'>beta</span>}
         {this._info(browser)}
         {this._warn(browser)}
       </>

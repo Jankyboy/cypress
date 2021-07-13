@@ -16,15 +16,20 @@ const isObject = (event, handler) => {
 }
 
 const eventValidators = {
-  'file:preprocessor': isFunction,
-  'before:browser:launch': isFunction,
-  'task': isObject,
-  'after:screenshot': isFunction,
-  '_get:task:keys': isFunction,
   '_get:task:body': isFunction,
+  '_get:task:keys': isFunction,
+  'after:run': isFunction,
+  'after:screenshot': isFunction,
+  'after:spec': isFunction,
+  'before:browser:launch': isFunction,
+  'before:run': isFunction,
+  'before:spec': isFunction,
+  'dev-server:start': isFunction,
+  'file:preprocessor': isFunction,
+  'task': isObject,
 }
 
-const validateEvent = (event, handler) => {
+const validateEvent = (event, handler, config) => {
   const validator = eventValidators[event]
 
   if (!validator) {
@@ -39,7 +44,7 @@ The following are valid events:
 `)
   }
 
-  return validator(event, handler)
+  return validator(event, handler, config)
 }
 
 module.exports = validateEvent

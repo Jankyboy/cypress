@@ -1,5 +1,5 @@
 require('../spec_helper')
-import { detect, detectByPath, setMajorVersion } from '../../lib/detect'
+import { firefoxGcWarning, detect, detectByPath, setMajorVersion } from '../../lib/detect'
 import { goalBrowsers } from '../fixtures'
 import { expect } from 'chai'
 import { utils } from '../../lib/utils'
@@ -39,14 +39,29 @@ describe('browser detection', () => {
   })
 
   context('#setMajorVersion', () => {
-    const foundBrowser = {
-      name: 'test browser',
-      version: '11.22.33',
-    }
+    it('major version is converted to number when string of numbers', () => {
+      const foundBrowser = {
+        name: 'test browser',
+        version: '11.22.33',
+      }
 
-    setMajorVersion(foundBrowser)
-    // @ts-ignore
-    expect(foundBrowser.majorVersion, 'major version was converted to number').to.equal(11)
+      const res = setMajorVersion(foundBrowser)
+
+      // @ts-ignore
+      expect(res.majorVersion).to.equal(11)
+    })
+
+    it('falls back to version when unconventional browser version', () => {
+      const foundBrowser = {
+        name: 'test browser',
+        version: 'VMware Fusion 12.1.0',
+      }
+
+      const res = setMajorVersion(foundBrowser)
+
+      // @ts-ignore
+      expect(res.majorVersion).to.equal(foundBrowser.version)
+    })
   })
 
   context('#detectByPath', () => {
@@ -125,6 +140,20 @@ describe('browser detection', () => {
             path: '/Applications/My Shiny New Browser.app',
           }),
         )
+      })
+    })
+
+    // @see https://github.com/cypress-io/cypress/issues/8241
+    it('adds warnings to Firefox versions less than 80', async () => {
+      execa.withArgs('/good-firefox', ['--version'])
+      .resolves({ stdout: 'Mozilla Firefox 80.0' })
+
+      execa.withArgs('/bad-firefox', ['--version'])
+      .resolves({ stdout: 'Mozilla Firefox 79.1' })
+
+      expect(await detectByPath('/good-firefox')).to.not.have.property('warning')
+      expect(await detectByPath('/bad-firefox')).to.include({
+        warning: firefoxGcWarning,
       })
     })
   })

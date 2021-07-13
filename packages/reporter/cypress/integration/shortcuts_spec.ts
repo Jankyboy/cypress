@@ -15,7 +15,7 @@ const runnerStub = () => {
   } as EventEmitterStub
 }
 
-describe('controls', function () {
+describe('shortcuts', function () {
   let runner: EventEmitterStub
 
   beforeEach(function () {
@@ -23,7 +23,7 @@ describe('controls', function () {
 
     cy.fixture('runnables').as('runnables')
 
-    cy.visit('/dist').then((win) => {
+    cy.visit('/').then((win) => {
       win.render({
         runner,
         spec: {
@@ -81,6 +81,33 @@ describe('controls', function () {
       cy.get('body').type('f').then(() => {
         expect(runner.emit).to.have.been.calledWith('focus:tests')
       })
+    })
+
+    it('continues resuming tests', () => {
+      cy.get('body').type('s').then(() => {
+        expect(runner.emit).to.have.been.calledWith('runner:stop')
+      })
+
+      cy.get('body').type('c').then(() => {
+        expect(runner.emit).to.have.been.calledWith('runner:resume')
+      })
+    })
+
+    it('go to next test', () => {
+      cy.get('body').type('s').then(() => {
+        expect(runner.emit).to.have.been.calledWith('runner:stop')
+      })
+
+      cy.get('body').type('n').then(() => {
+        expect(runner.emit).to.have.been.calledWith('runner:next')
+      })
+    })
+
+    it('toggles auto-scrolling', () => {
+      cy.get('body').type('a')
+      cy.get('.toggle-auto-scrolling').should('not.have.class', 'auto-scrolling-enabled')
+      cy.get('body').type('a')
+      cy.get('.toggle-auto-scrolling').should('have.class', 'auto-scrolling-enabled')
     })
 
     it('does not run shortcut if typed into an input', () => {

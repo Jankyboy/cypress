@@ -3,14 +3,16 @@ import { action, autorun } from 'mobx'
 import { observer } from 'mobx-react'
 import React, { Component } from 'react'
 import { $ } from '@packages/driver'
+import {
+  SnapshotControls,
+  ScriptError,
+  IframeModel,
+  selectorPlaygroundModel,
+  AutIframe,
+  logger,
+  studioRecorder,
+} from '@packages/runner-shared'
 
-import AutIframe from './aut-iframe'
-import ScriptError from '../errors/script-error'
-import SnapshotControls from './snapshot-controls'
-
-import IframeModel from './iframe-model'
-import logger from '../lib/logger'
-import selectorPlaygroundModel from '../selector-playground/selector-playground-model'
 import util from '../lib/util'
 
 @observer
@@ -22,10 +24,19 @@ export default class Iframes extends Component {
 
     return (
       <div
-        className={cs('iframes-container', { 'has-error': !!scriptError })}
+        className={cs(
+          'iframes-container',
+          {
+            'has-error': !!scriptError,
+            'studio-is-open': studioRecorder.isOpen,
+            'studio-is-loading': studioRecorder.isLoading,
+            'studio-is-ready': studioRecorder.isReady,
+            'studio-is-failed': studioRecorder.isFailed,
+          },
+        )}
         style={{
           top: headerHeight,
-          left: this.props.state.absoluteReporterWidth,
+          left: this.props.state.absoluteReporterWidth + this.props.state.specListWidth,
         }}
       >
         <div
@@ -40,6 +51,19 @@ export default class Iframes extends Component {
         />
         <ScriptError error={scriptError} />
         <div className='cover' />
+        {studioRecorder.isLoading && (
+          <div
+            className='studio-loading-cover'
+            style={{
+              marginLeft,
+              height,
+              transform: `scale(${scale})`,
+              width,
+            }}
+          >
+            <div><i className='fa fa-spinner fa-spin' /></div>
+          </div>
+        )}
       </div>
     )
   }
@@ -51,6 +75,13 @@ export default class Iframes extends Component {
     this.props.eventManager.on('before:screenshot', this.autIframe.beforeScreenshot)
     this.props.eventManager.on('after:screenshot', this.autIframe.afterScreenshot)
     this.props.eventManager.on('script:error', this._setScriptError)
+
+    this.props.eventManager.on('run:end', this.autIframe.startStudio)
+    this.props.eventManager.on('page:loading', (isLoading) => {
+      if (!isLoading) {
+        this.autIframe.reattachStudio()
+      }
+    })
 
     // TODO: need to take headless mode into account
     // may need to not display reporter if more than 200 tests
@@ -72,7 +103,6 @@ export default class Iframes extends Component {
 
     this.iframeModel = new IframeModel({
       state: this.props.state,
-      removeHeadStyles: this.autIframe.removeHeadStyles,
       restoreDom: this.autIframe.restoreDom,
       highlightEl: this.autIframe.highlightEl,
       detachDom: this.autIframe.detachDom,
@@ -92,7 +122,13 @@ export default class Iframes extends Component {
   }
 
   @action _setScriptError = (err) => {
-    this.props.state.scriptError = err
+    if (err && 'error' in err) {
+      this.props.state.scriptError = err.error
+    }
+
+    if (!err) {
+      this.props.state.scriptError = null
+    }
   }
 
   _run = (config) => {
@@ -117,15 +153,6 @@ export default class Iframes extends Component {
     const $autIframe = this.autIframe.create(this.props.config).appendTo($container)
 
     this.autIframe.showBlankContents()
-
-    // specs with type "component" can only arrive if the server has "componentTesting" experiment on
-    if (this.props.config.spec.specType === 'component') {
-      // In mount mode we need to render something right from spec file
-      // So load application tests to the aut frame
-      $autIframe.prop('src', specSrc)
-
-      return $autIframe
-    }
 
     const $specIframe = $('<iframe />', {
       id: `Your Spec: '${specSrc}'`,

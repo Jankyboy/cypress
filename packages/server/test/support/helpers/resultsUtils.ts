@@ -1,5 +1,5 @@
 import e2e from './e2e'
-import moment from 'moment'
+import dayjs from 'dayjs'
 import _ from 'lodash'
 
 const expect = global.expect as unknown as Chai.ExpectStatic
@@ -26,7 +26,7 @@ const expectStartToBeBeforeEnd = function (obj, start, end) {
   const e = _.get(obj, end)
 
   expect(
-    moment(s).isBefore(e),
+    dayjs(s).isBefore(e),
     `expected start: ${s} to be before end: ${e}`,
   ).to.be.true
 
@@ -74,8 +74,7 @@ const normalizeTestTimings = function (obj, timings) {
 
 export const expectRunsToHaveCorrectTimings = (runs = []) => {
   runs.forEach((run) => {
-    expect(run.cypressConfig).to.be.a('object')
-    run.cypressConfig = {}
+    expect(run.config).to.not.exist
     expectStartToBeBeforeEnd(run, 'stats.wallClockStartedAt', 'stats.wallClockEndedAt')
     expectStartToBeBeforeEnd(run, 'reporterStats.start', 'reporterStats.end')
 
@@ -163,7 +162,7 @@ export const expectRunsToHaveCorrectTimings = (runs = []) => {
           }
         })
       } catch (e) {
-        e.message = `Error during validation for test "${test.title.join(' / ')}"\n${e.message}`
+        e.message = `Error during validation for test \n${e.message}`
         throw e
       }
     })
@@ -185,7 +184,12 @@ export const expectRunsToHaveCorrectTimings = (runs = []) => {
 export const expectCorrectModuleApiResult = (json, opts: {
   e2ePath: string
   runs: number
+  video: boolean
 }) => {
+  if (opts.video == null) {
+    opts.video = true
+  }
+
   // should be n runs
   expect(json.runs).to.have.length(opts.runs)
 
@@ -281,8 +285,10 @@ export const expectCorrectModuleApiResult = (json, opts: {
         expect(d.toJSON()).to.eq(attempt.startedAt)
         attempt.startedAt = STATIC_DATE
 
-        expect(attempt.videoTimestamp).to.be.a('number')
-        attempt.videoTimestamp = 9999
+        if (opts.video) {
+          expect(attempt.videoTimestamp).to.be.a('number')
+          attempt.videoTimestamp = 9999
+        }
       }
 
       attempt.screenshots.forEach((screenshot) => {
@@ -303,7 +309,9 @@ export const expectCorrectModuleApiResult = (json, opts: {
       }
     })
 
-    // normalize video path
-    run.video = e2e.normalizeStdout(run.video)
+    if (opts.video) {
+      // normalize video path
+      run.video = e2e.normalizeStdout(run.video)
+    }
   })
 }

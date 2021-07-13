@@ -47,7 +47,7 @@ module.exports = function (Commands, Cypress, cy, state) {
   // until they're 'really' resolved, so naturally this API
   // supports nesting promises
   const thenFn = function (subject, userOptions, fn) {
-    const ctx = this
+    const ctx = state('ctx')
 
     if (_.isFunction(userOptions)) {
       fn = userOptions
@@ -55,7 +55,7 @@ module.exports = function (Commands, Cypress, cy, state) {
     }
 
     const options = _.defaults({}, userOptions, {
-      timeout: cy.timeout(),
+      timeout: Cypress.config('defaultCommandTimeout'),
     })
 
     // clear the timeout since we are handling
@@ -306,7 +306,7 @@ module.exports = function (Commands, Cypress, cy, state) {
       })
     }
 
-    const traverseObjectAtPath = (acc, pathsArray, index = 0) => {
+    const traverseObjectAtPath = (acc, pathsArray, updatedSubject, index = 0) => {
       // traverse at this depth
       const prop = pathsArray[index]
       const previousProp = pathsArray[index - 1]
@@ -324,7 +324,7 @@ module.exports = function (Commands, Cypress, cy, state) {
           traversalErr = propertyNotOnPreviousNullOrUndefinedValueErr(prop, acc, previousProp)
         }
 
-        return acc
+        return { prop: acc, updatedSubject }
       }
 
       // if we have no more properties to traverse
@@ -335,7 +335,7 @@ module.exports = function (Commands, Cypress, cy, state) {
         }
 
         // finally return the reduced traversed accumulator here
-        return acc
+        return { prop: acc, updatedSubject }
       }
 
       // attempt to lookup this property on the acc
@@ -347,11 +347,11 @@ module.exports = function (Commands, Cypress, cy, state) {
       if (!(prop in primitiveToObject(acc))) {
         traversalErr = propertyNotOnSubjectErr(prop)
 
-        return undefined
+        return { prop: undefined, updatedSubject }
       }
 
       // if we succeeded then continue to traverse
-      return traverseObjectAtPath(acc[prop], pathsArray, index + 1)
+      return traverseObjectAtPath(acc[prop], pathsArray, acc, index + 1)
     }
 
     const getSettledValue = (value, subject, propAtLastPath) => {
@@ -395,11 +395,13 @@ module.exports = function (Commands, Cypress, cy, state) {
 
       const remoteSubject = cy.getRemotejQueryInstance(subject)
 
-      const actualSubject = remoteSubject || subject
+      let actualSubject = remoteSubject || subject
 
       let paths = _.isString(str) ? str.split('.') : [str]
 
-      const prop = traverseObjectAtPath(actualSubject, paths)
+      const { prop, updatedSubject } = traverseObjectAtPath(actualSubject, paths, actualSubject)
+
+      actualSubject = updatedSubject
 
       const value = getSettledValue(prop, actualSubject, _.last(paths))
 
@@ -518,17 +520,22 @@ module.exports = function (Commands, Cypress, cy, state) {
       const next = state('current').get('next')
 
       if (next) {
-        const checkSubject = (newSubject, args) => {
+        const checkSubject = (newSubject, args, firstCall) => {
           if (state('current') !== next) {
             return
           }
 
-          // find the new subject and splice it out
-          // with our existing subject
-          const index = _.indexOf(args, newSubject)
+          // https://github.com/cypress-io/cypress/issues/4921
+          // When dual commands like contains() is used as the firstCall (cy.contains() style),
+          // we should not prepend subject.
+          if (!firstCall) {
+            // find the new subject and splice it out
+            // with our existing subject
+            const index = _.indexOf(args, newSubject)
 
-          if (index > -1) {
-            args.splice(index, 1, subject)
+            if (index > -1) {
+              args.splice(index, 1, subject)
+            }
           }
 
           return cy.removeListener('next:subject:prepared', checkSubject)

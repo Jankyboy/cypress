@@ -2,8 +2,6 @@ import { log } from './log'
 import * as cp from 'child_process'
 import { Browser, FoundBrowser } from './types'
 
-const firefoxInfo = 'Firefox support is currently in beta! You can help us continue to improve the Cypress + Firefox experience by [reporting any issues you find](https://on.cypress.io/new-issue).'
-
 /** list of the browsers we can detect and use by default */
 export const browsers: Browser[] = [
   {
@@ -26,6 +24,14 @@ export const browsers: Browser[] = [
   {
     name: 'chrome',
     family: 'chromium',
+    channel: 'beta',
+    displayName: 'Chrome Beta',
+    versionRegex: /Google Chrome (\S+) beta/m,
+    binary: 'google-chrome-beta',
+  },
+  {
+    name: 'chrome',
+    family: 'chromium',
     channel: 'canary',
     displayName: 'Canary',
     versionRegex: /Google Chrome Canary (\S+)/m,
@@ -36,7 +42,6 @@ export const browsers: Browser[] = [
     family: 'firefox',
     channel: 'stable',
     displayName: 'Firefox',
-    info: firefoxInfo,
     // Mozilla Firefox 70.0.1
     versionRegex: /^Mozilla Firefox ([^\sab]+)$/m,
     binary: 'firefox',
@@ -46,7 +51,6 @@ export const browsers: Browser[] = [
     family: 'firefox',
     channel: 'dev',
     displayName: 'Firefox Developer Edition',
-    info: firefoxInfo,
     // Mozilla Firefox 73.0b12
     versionRegex: /^Mozilla Firefox (\S+b\S*)$/m,
     // ubuntu PPAs install it as firefox
@@ -57,7 +61,6 @@ export const browsers: Browser[] = [
     family: 'firefox',
     channel: 'nightly',
     displayName: 'Firefox Nightly',
-    info: firefoxInfo,
     // Mozilla Firefox 74.0a1
     versionRegex: /^Mozilla Firefox (\S+a\S*)$/m,
     // ubuntu PPAs install it as firefox-trunk
@@ -69,7 +72,7 @@ export const browsers: Browser[] = [
     channel: 'stable',
     displayName: 'Edge',
     versionRegex: /Microsoft Edge (\S+)/m,
-    binary: 'edge',
+    binary: ['edge', 'microsoft-edge'],
   },
   {
     name: 'edge',
@@ -93,7 +96,7 @@ export const browsers: Browser[] = [
     channel: 'dev',
     displayName: 'Edge Dev',
     versionRegex: /Microsoft Edge Dev (\S+)/m,
-    binary: 'edge-dev',
+    binary: ['edge-dev', 'microsoft-edge-dev'],
   },
 ]
 
@@ -102,6 +105,7 @@ export function launch (
   browser: FoundBrowser,
   url: string,
   args: string[] = [],
+  defaultBrowserEnv = {},
 ) {
   log('launching browser %o', { browser, url })
 
@@ -115,7 +119,11 @@ export function launch (
 
   log('spawning browser with args %o', { args })
 
-  const proc = cp.spawn(browser.path, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+  // allow setting default env vars such as MOZ_HEADLESS_WIDTH
+  // but only if it's not already set by the environment
+  const env = Object.assign({}, defaultBrowserEnv, process.env)
+
+  const proc = cp.spawn(browser.path, args, { stdio: ['ignore', 'pipe', 'pipe'], env })
 
   proc.stdout.on('data', (buf) => {
     log('%s stdout: %s', browser.name, String(buf).trim())

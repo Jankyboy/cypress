@@ -4,6 +4,7 @@ const minimatch = require('minimatch')
 
 const $errUtils = require('./error_utils')
 const $XHR = require('./xml_http_request')
+const { makeContentWindowListener } = require('./events')
 
 const regularResourcesRe = /\.(jsx?|coffee|html|less|s?css|svg)(\?.*)?$/
 const needsDashRe = /([a-z][A-Z])/g
@@ -51,18 +52,6 @@ const isAbortedThroughUnload = (xhr) => {
   // TODO: How do we want to handle other responseTypes?
   responseTypeIsTextOrEmptyString(xhr.responseType) &&
   xhr.responseText === ''
-}
-
-const warnOnStubDeprecation = (obj, type) => {
-  if (_.has(obj, 'stub')) {
-    return $errUtils.warnByPath('server.stub_deprecated', { args: { type } })
-  }
-}
-
-const warnOnForce404Default = (obj) => {
-  if (obj.force404 === false) {
-    return $errUtils.warnByPath('server.force404_deprecated')
-  }
 }
 
 const warnOnWhitelistRenamed = (obj, type) => {
@@ -240,8 +229,6 @@ const create = (options = {}) => {
     },
 
     route (attrs = {}) {
-      warnOnStubDeprecation(attrs, 'route')
-
       // merge attrs with the server's defaults
       // so we preserve the state of the attrs
       // at the time they're created since we
@@ -418,8 +405,6 @@ const create = (options = {}) => {
     },
 
     set (obj) {
-      warnOnStubDeprecation(obj, 'server')
-      warnOnForce404Default(obj)
       warnOnWhitelistRenamed(obj, 'server')
 
       // handle enable=true|false
@@ -436,6 +421,8 @@ const create = (options = {}) => {
       const XHR = contentWindow.XMLHttpRequest
       const { send, open, abort } = XHR.prototype
       const srh = XHR.prototype.setRequestHeader
+
+      const bridgeContentWindowListener = makeContentWindowListener('cypressXhrBridge', contentWindow)
 
       restoreFn = () => {
         // restore the property back on the window
@@ -513,7 +500,7 @@ const create = (options = {}) => {
 
             isCalled = true
             try {
-              return fn.apply(window, args)
+              return fn.apply(contentWindow, args)
             } finally {
               isCalled = false
             }
@@ -591,9 +578,9 @@ const create = (options = {}) => {
 
         // bail if eventhandlers have already been called to prevent
         // infinite recursion
-        overrides.onload = bailIfRecursive(onLoadFn)
-        overrides.onerror = bailIfRecursive(onErrorFn)
-        overrides.onreadystatechange = bailIfRecursive(onReadyStateFn)
+        overrides.onload = bridgeContentWindowListener(bailIfRecursive(onLoadFn))
+        overrides.onerror = bridgeContentWindowListener(bailIfRecursive(onErrorFn))
+        overrides.onreadystatechange = bridgeContentWindowListener(bailIfRecursive(onReadyStateFn))
 
         props.forEach((prop) => {
           // if we currently have one of these properties then

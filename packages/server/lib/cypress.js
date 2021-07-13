@@ -13,9 +13,10 @@ const R = require('ramda')
 const Promise = require('bluebird')
 const debug = require('debug')('cypress:server:cypress')
 const argsUtils = require('./util/args')
+const chalk = require('chalk')
 
-const warning = (code) => {
-  return require('./errors').warning(code)
+const warning = (code, args) => {
+  return require('./errors').warning(code, args)
 }
 
 const exit = (code = 0) => {
@@ -25,6 +26,20 @@ const exit = (code = 0) => {
   debug('about to exit with code', code)
 
   return process.exit(code)
+}
+
+const showWarningForInvalidConfig = (options) => {
+  const invalidConfigOptions = require('lodash').keys(options.config).reduce((invalid, option) => {
+    if (!require('./config').getConfigKeys().find((configKey) => configKey === option)) {
+      invalid.push(option)
+    }
+
+    return invalid
+  }, [])
+
+  if (invalidConfigOptions.length && options.invokedFromCli) {
+    return warning('INVALID_CONFIG_OPTION', invalidConfigOptions)
+  }
 }
 
 const exit0 = () => {
@@ -66,8 +81,6 @@ module.exports = {
           warning('INVOKED_BINARY_OUTSIDE_NPM_MODULE')
         }
 
-        // just run the gui code directly here
-        // and pass our options directly to main
         debug('running Electron currently')
 
         return require('./modes')(mode, options)
@@ -115,6 +128,8 @@ module.exports = {
 
     try {
       options = argsUtils.toObject(argv)
+
+      showWarningForInvalidConfig(options)
     } catch (argumentsError) {
       debug('could not parse CLI arguments: %o', argv)
 
@@ -160,10 +175,6 @@ module.exports = {
         mode = 'logs'
       } else if (options.clearLogs) {
         mode = 'clearLogs'
-      } else if (options.getKey) {
-        mode = 'getKey'
-      } else if (options.generateKey) {
-        mode = 'generateKey'
       } else if (!(options.exitWithCode == null)) {
         mode = 'exitWithCode'
       } else if (options.runProject) {
@@ -227,22 +238,6 @@ module.exports = {
         .then(exit0)
         .catch(exitErr)
 
-      case 'getKey':
-        // print the key + exit
-        return require('./project').getSecretKeyByPath(options.projectRoot)
-        .then((key) => {
-          return console.log(key) // eslint-disable-line no-console
-        }).then(exit0)
-        .catch(exitErr)
-
-      case 'generateKey':
-        // generate + print the key + exit
-        return require('./project').generateSecretKeyByPath(options.projectRoot)
-        .then((key) => {
-          return console.log(key) // eslint-disable-line no-console
-        }).then(exit0)
-        .catch(exitErr)
-
       case 'exitWithCode':
         return require('./modes/exit')(options)
         .then(exit)
@@ -252,7 +247,20 @@ module.exports = {
         // run headlessly and exit
         // with num of totalFailed
         return this.runElectron(mode, options)
-        .get('totalFailed')
+        .then((results) => {
+          if (results.runs) {
+            const isCanceled = results.runs.filter((run) => run.skippedSpec).length
+
+            if (isCanceled) {
+              // eslint-disable-next-line no-console
+              console.log(chalk.magenta('\n  Exiting with non-zero exit code because the run was canceled.'))
+
+              return 1
+            }
+          }
+
+          return results.totalFailed
+        })
         .then(exit)
         .catch(exitErr)
 

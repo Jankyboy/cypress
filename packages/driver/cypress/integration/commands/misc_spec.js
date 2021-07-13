@@ -67,9 +67,31 @@ describe('src/cy/commands/misc', () => {
         return cy.log('foobarbaz', [{}]).then(function () {
           expect(this.lastLog.invoke('consoleProps')).to.deep.eq({
             Command: 'log',
-            args: [{}],
+            args: [[{}]],
             message: 'foobarbaz',
           })
+        })
+      })
+
+      // https://github.com/cypress-io/cypress/issues/8084
+      it('log does not corrupt the stack and returns subject correctly', () => {
+        cy.wrap({ a: 42 }).then(async (data) => {
+          cy.log('count', Object.keys(data).length)
+          cy.log('another log')
+
+          return await Object.keys(data).length
+        }).then((test) => {
+          expect(test).to.eq(1)
+        })
+      })
+
+      // https://github.com/cypress-io/cypress/issues/16068
+      it('log does not have limit to the number of arguments', function () {
+        cy.log('msg', 1, 2, 3, 4)
+        .then(() => {
+          const { lastLog } = this
+
+          expect(lastLog.get('message')).to.eq('msg, 1, 2, 3, 4')
         })
       })
     })

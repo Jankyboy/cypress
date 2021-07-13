@@ -430,26 +430,6 @@ describe('src/cy/commands/request', () => {
       })
     })
 
-    describe('failOnStatus', () => {
-      it('is deprecated but does not fail even on 500 when failOnStatus=false', () => {
-        const warning = cy.spy(Cypress.utils, 'warning')
-
-        Cypress.backend
-        .withArgs('http:request')
-        .resolves({ isOkStatusCode: false, status: 500 })
-
-        cy.request({
-          url: 'http://localhost:1234/foo',
-          failOnStatus: false,
-        })
-        .then((resp) => {
-          // make sure it really was 500!
-          expect(resp.status).to.eq(500)
-          expect(warning.lastCall.args[0]).to.include('The `cy.request()` `failOnStatus` option has been renamed to `failOnStatusCode`. Please update your code. This option will be removed at a later time.')
-        })
-      })
-    })
-
     describe('failOnStatusCode', () => {
       it('does not fail on status 401', () => {
         Cypress.backend
@@ -489,6 +469,60 @@ describe('src/cy/commands/request', () => {
         })
         .then((res) => {
           expect(res.body).to.contain('"user-agent":"something special"')
+        })
+      })
+    })
+
+    describe('binary data', () => {
+      // https://github.com/cypress-io/cypress/issues/6178
+      it('can send Blob', () => {
+        const body = new Blob([[1, 2, 3, 4]], { type: 'application/octet-stream' })
+
+        cy.request(
+          {
+            body,
+            method: 'POST',
+            url: 'http://localhost:3500/dump-octet-body',
+            headers: {
+              'Content-Type': 'application/octet-stream',
+            },
+          },
+        )
+        .then((response) => {
+          expect(response.status).to.equal(200)
+
+          // When user-passed body to the Nodejs server is a Buffer,
+          // Nodejs doesn't provide any decoder in the response.
+          // So, we need to decode it ourselves.
+          const dec = new TextDecoder()
+
+          expect(dec.decode(response.body)).to.contain('1,2,3,4')
+        })
+      })
+
+      it('can send FormData with File', () => {
+        const formData = new FormData()
+
+        formData.set('file', new File(['1,2,3,4'], 'upload.txt'), 'upload.txt')
+        formData.set('name', 'Tony Stark')
+        cy.request({
+          method: 'POST',
+          url: 'http://localhost:3500/dump-form-data',
+          body: formData,
+          headers: {
+            'content-type': 'multipart/form-data',
+          },
+        })
+        .then((response) => {
+          expect(response.status).to.equal(200)
+          // When user-passed body to the Nodejs server is a Buffer,
+          // Nodejs doesn't provide any decoder in the response.
+          // So, we need to decode it ourselves.
+          const dec = new TextDecoder()
+          const result = dec.decode(response.body)
+
+          expect(result).to.contain('Tony Stark')
+          expect(result).to.contain('upload.txt')
         })
       })
     })

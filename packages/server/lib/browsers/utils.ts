@@ -10,7 +10,7 @@ const debug = require('debug')('cypress:server:browsers:utils')
 const Bluebird = require('bluebird')
 const getPort = require('get-port')
 const launcher = require('@packages/launcher')
-const fs = require('../util/fs')
+const { fs } = require('../util/fs')
 const extension = require('@packages/extension')
 const appData = require('../util/app_data')
 const profileCleaner = require('../util/profile_cleaner')
@@ -36,6 +36,10 @@ const getBrowserPath = (browser) => {
     getAppDataPath(browser),
     `${browser.name}-${browser.channel}`,
   )
+}
+
+const getMajorVersion = (version) => {
+  return parseFloat(version.split('.')[0]) || version
 }
 
 const defaultLaunchOptions: {
@@ -193,6 +197,8 @@ export = {
 
   getBrowserPath,
 
+  getMajorVersion,
+
   getProfileDir,
 
   getExtensionDir,
@@ -202,8 +208,6 @@ export = {
   removeOldProfiles,
 
   getBrowserByPath: launcher.detectByPath,
-
-  launch: launcher.launch,
 
   writeExtension (browser, isTextTerminal, proxyUrl, socketIoRoute) {
     debug('writing extension')
@@ -236,11 +240,17 @@ export = {
 
       debug('found browsers %o', { browsers })
 
+      if (!process.versions.electron) {
+        debug('not in electron, skipping adding electron browser')
+
+        return browsers
+      }
+
       // @ts-ignore
       const version = process.versions.chrome || ''
 
       if (version) {
-        majorVersion = parseFloat(version.split('.')[0])
+        majorVersion = getMajorVersion(version)
       }
 
       const electronBrowser: FoundBrowser = {
